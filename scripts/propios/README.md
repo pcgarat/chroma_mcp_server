@@ -10,15 +10,15 @@
 
 ## setup-chroma-env.sh
 
-Script para configurar las variables de entorno de ChromaDB cargándolas desde un archivo `.env` en la misma carpeta.
+Script para configurar las variables de entorno de ChromaDB cargándolas desde un archivo `.env` en la raíz de `chroma_mcp_server`.
 
 ### Configuración Inicial
 
-**Primera vez:** Copia el archivo `env-template` a `.env`:
+**Primera vez:** Copia el archivo `env-template` a `.env` en la raíz de `chroma_mcp_server`:
 
 ```bash
-cd chroma_mcp_server/scripts/propios
-cp env-template .env
+cd chroma_mcp_server
+cp scripts/propios/env-template .env
 ```
 
 Luego edita el archivo `.env` con tus valores específicos (API keys, rutas, etc.).
@@ -62,7 +62,7 @@ chroma-mcp-client setup-collections
 
 ### Configuración
 
-El script carga las variables de entorno desde el archivo `.env` en la misma carpeta. Si necesitas cambiar los valores, edita el archivo `.env` (no el script).
+El script carga las variables de entorno desde el archivo `.env` en la raíz de `chroma_mcp_server`. Si necesitas cambiar los valores, edita el archivo `.env` (no el script).
 
 **Nota:** El archivo `.env` no debe ser versionado en Git (debe estar en `.gitignore`). El archivo `env-template` es el template que puedes versionar.
 

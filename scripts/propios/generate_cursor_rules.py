@@ -7,11 +7,40 @@ import sys
 from pathlib import Path
 import shutil
 
+def get_chroma_mcp_server_root() -> Path:
+    """
+    Obtiene la raíz del proyecto chroma_mcp_server buscando marcadores como
+    pyproject.toml o Makefile, empezando desde el directorio del script.
+    """
+    # Obtener el directorio donde está este script
+    script_dir = Path(__file__).parent.resolve()
+    
+    # Buscar hacia arriba desde el script hasta encontrar la raíz del proyecto
+    current = script_dir
+    markers = ["pyproject.toml", "Makefile", ".git"]
+    
+    # Buscar hasta 5 niveles arriba (por si acaso)
+    for _ in range(5):
+        # Verificar si encontramos algún marcador
+        for marker in markers:
+            if (current / marker).exists():
+                return current.resolve()
+        # Si no encontramos, subir un nivel
+        parent = current.parent
+        if parent == current:  # Llegamos a la raíz del sistema
+            break
+        current = parent
+    
+    # Fallback: usar el cálculo relativo (dos niveles arriba desde scripts/propios)
+    fallback_root = script_dir.parent.parent
+    return fallback_root.resolve()
+
 # Obtener el directorio donde está este script
 SCRIPT_DIR = Path(__file__).parent.resolve()
+# Obtener la raíz del proyecto dinámicamente
+PROJECT_ROOT = get_chroma_mcp_server_root()
 CURSOR_RULES_SOURCE = SCRIPT_DIR / "cursor-rules"
-CURSOR_RULES_TARGET = Path(__file__).parent.parent.parent.parent / ".cursor" / "rules"
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+CURSOR_RULES_TARGET = PROJECT_ROOT / ".cursor" / "rules"
 
 # Colecciones de ChromaDB según reset_collections.py
 COLLECTIONS = [

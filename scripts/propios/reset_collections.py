@@ -6,9 +6,37 @@ import os
 import sys
 from pathlib import Path
 
-# Obtener el directorio donde está este script
-SCRIPT_DIR = Path(__file__).parent.resolve()
-ENV_FILE = SCRIPT_DIR / ".env"
+def get_chroma_mcp_server_root() -> Path:
+    """
+    Obtiene la raíz del proyecto chroma_mcp_server buscando marcadores como
+    pyproject.toml o Makefile, empezando desde el directorio del script.
+    """
+    # Obtener el directorio donde está este script
+    script_dir = Path(__file__).parent.resolve()
+    
+    # Buscar hacia arriba desde el script hasta encontrar la raíz del proyecto
+    current = script_dir
+    markers = ["pyproject.toml", "Makefile", ".git"]
+    
+    # Buscar hasta 5 niveles arriba (por si acaso)
+    for _ in range(5):
+        # Verificar si encontramos algún marcador
+        for marker in markers:
+            if (current / marker).exists():
+                return current.resolve()
+        # Si no encontramos, subir un nivel
+        parent = current.parent
+        if parent == current:  # Llegamos a la raíz del sistema
+            break
+        current = parent
+    
+    # Fallback: usar el cálculo relativo (dos niveles arriba desde scripts/propios)
+    fallback_root = script_dir.parent.parent
+    return fallback_root.resolve()
+
+# Obtener la raíz del proyecto chroma_mcp_server dinámicamente
+CHROMA_MCP_SERVER_ROOT = get_chroma_mcp_server_root()
+ENV_FILE = CHROMA_MCP_SERVER_ROOT / ".env"
 
 # Cargar variables de entorno desde el archivo .env si existe
 if ENV_FILE.exists():
@@ -31,15 +59,18 @@ if ENV_FILE.exists():
                         os.environ[key.strip()] = value
     except Exception as e:
         print(f"⚠️  Error al cargar .env: {e}", file=sys.stderr)
-        print(f"💡 Asegúrate de que el archivo .env existe en {SCRIPT_DIR}", file=sys.stderr)
+        print(f"💡 Asegúrate de que el archivo .env existe en {CHROMA_MCP_SERVER_ROOT}", file=sys.stderr)
 else:
-    print(f"⚠️  No se encontró el archivo .env en {SCRIPT_DIR}", file=sys.stderr)
-    print(f"💡 Copia env-template a .env: cp {SCRIPT_DIR}/env-template {ENV_FILE}", file=sys.stderr)
+    print(f"⚠️  No se encontró el archivo .env en {CHROMA_MCP_SERVER_ROOT}", file=sys.stderr)
+    template_file = SCRIPT_DIR / "env-template"
+    if template_file.exists():
+        print(f"💡 Copia env-template a .env: cp {template_file} {ENV_FILE}", file=sys.stderr)
+    else:
+        print(f"💡 Crea un archivo .env en {CHROMA_MCP_SERVER_ROOT} con las variables de entorno necesarias.", file=sys.stderr)
 
 # Agregar el directorio src al path para importar módulos
-# __file__ está en chroma_mcp_server/scripts/propios/reset_collections.py
-# Necesitamos llegar a chroma_mcp_server/src
-project_root = Path(__file__).parent.parent.parent  # chroma_mcp_server
+# Usar la raíz del proyecto calculada dinámicamente
+project_root = CHROMA_MCP_SERVER_ROOT
 sys.path.insert(0, str(project_root / "src"))  # chroma_mcp_server/src
 
 import chromadb

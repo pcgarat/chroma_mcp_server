@@ -3,24 +3,26 @@
 # Uso: source ./chroma_mcp_server/scripts/propios/setup-chroma-env.sh
 # O: ./chroma_mcp_server/scripts/propios/setup-chroma-env.sh && chroma-mcp-client <comando>
 #
-# Este script carga las variables de entorno desde un archivo .env en la misma carpeta.
+# Este script carga las variables de entorno desde un archivo .env en la raíz de chroma_mcp_server.
 # Si no existe el archivo .env, muestra un mensaje de error indicando cómo crearlo.
 
 # Obtener el directorio donde está este script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+# El .env ahora está en la raíz de chroma_mcp_server (dos niveles arriba desde scripts/propios)
+CHROMA_MCP_SERVER_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ENV_FILE="$CHROMA_MCP_SERVER_ROOT/.env"
 ENV_TEMPLATE="$SCRIPT_DIR/env-template"
 
 # Verificar si existe el archivo .env
 if [ ! -f "$ENV_FILE" ]; then
-    echo "❌ Error: No se encontró el archivo .env en $SCRIPT_DIR" >&2
+    echo "❌ Error: No se encontró el archivo .env en $CHROMA_MCP_SERVER_ROOT" >&2
     echo "" >&2
     if [ -f "$ENV_TEMPLATE" ]; then
         echo "💡 Para crear el archivo .env, copia el template:" >&2
         echo "   cp $ENV_TEMPLATE $ENV_FILE" >&2
         echo "   # Luego edita $ENV_FILE con tus valores" >&2
     else
-        echo "💡 Crea un archivo .env en $SCRIPT_DIR con las variables de entorno necesarias." >&2
+        echo "💡 Crea un archivo .env en $CHROMA_MCP_SERVER_ROOT con las variables de entorno necesarias." >&2
     fi
     echo "" >&2
     exit 1
