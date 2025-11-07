@@ -33,9 +33,9 @@ reset-collections: ## Resetea todas las colecciones de ChromaDB (borra y recrea)
 	@echo "$(GREEN)🔄 Reseteando colecciones de ChromaDB...$(NC)"
 	@bash "$(SCRIPT_DIR)/reset-collections.sh"
 
-generate-cursor-rules: ## Genera reglas de Cursor optimizadas
+generate-cursor-rules: ## Genera reglas de Cursor optimizadas en un proyecto (interactivo)
 	@echo "$(GREEN)📝 Generando reglas de Cursor...$(NC)"
-	@python3 "$(SCRIPT_DIR)/generate_cursor_rules.py"
+	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/generate_cursor_rules.py"
 
 setup-env: ## Carga variables de entorno desde .env (requiere source make setup-env)
 	@echo "$(YELLOW)⚠️  Esta orden debe ejecutarse con: source <(make setup-env)$(NC)"

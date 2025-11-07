@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Script para generar reglas de Cursor en .cursor/rules basadas en las colecciones de ChromaDB.
 """
@@ -6,6 +7,17 @@ import os
 import sys
 from pathlib import Path
 import shutil
+
+# Configurar codificación UTF-8 para stdin/stdout/stderr
+if sys.version_info >= (3, 7):
+    try:
+        sys.stdin.reconfigure(encoding='utf-8')
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except (AttributeError, ValueError):
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+else:
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 def get_chroma_mcp_server_root() -> Path:
     """
@@ -35,12 +47,42 @@ def get_chroma_mcp_server_root() -> Path:
     fallback_root = script_dir.parent.parent
     return fallback_root.resolve()
 
+def get_project_path() -> Path:
+    """Pregunta al usuario la ruta del proyecto destino."""
+    while True:
+        try:
+            project_path = input("📁 Ingresa la ruta del proyecto donde quieres generar las reglas de Cursor: ").strip()
+        except (UnicodeDecodeError, UnicodeError) as e:
+            print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
+            print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 generate_cursor_rules.py", file=sys.stderr)
+            sys.exit(1)
+        
+        if not project_path:
+            print("⚠️  La ruta no puede estar vacía. Intenta de nuevo.")
+            continue
+        
+        # Expandir ~ y variables de entorno
+        project_path = os.path.expanduser(project_path)
+        project_path = os.path.expandvars(project_path)
+        
+        # Convertir a Path y resolver
+        project_path = Path(project_path).resolve()
+        
+        if not project_path.exists():
+            print(f"⚠️  La ruta {project_path} no existe. Intenta de nuevo.")
+            continue
+        
+        if not project_path.is_dir():
+            print(f"⚠️  {project_path} no es un directorio. Intenta de nuevo.")
+            continue
+        
+        return project_path
+
 # Obtener el directorio donde está este script
 SCRIPT_DIR = Path(__file__).parent.resolve()
-# Obtener la raíz del proyecto dinámicamente
-PROJECT_ROOT = get_chroma_mcp_server_root()
+# Obtener la raíz del proyecto chroma_mcp_server dinámicamente (para encontrar cursor-rules)
+CHROMA_MCP_SERVER_ROOT = get_chroma_mcp_server_root()
 CURSOR_RULES_SOURCE = SCRIPT_DIR / "cursor-rules"
-CURSOR_RULES_TARGET = PROJECT_ROOT / ".cursor" / "rules"
 
 # Colecciones de ChromaDB según reset_collections.py
 COLLECTIONS = [
@@ -53,16 +95,24 @@ COLLECTIONS = [
 ]
 
 def main():
-    """Genera las reglas de Cursor en .cursor/rules."""
-    print("🔄 Generando reglas de Cursor...\n")
+    """Genera las reglas de Cursor en .cursor/rules del proyecto especificado."""
+    print("🔄 Generador de Reglas de Cursor para ChromaDB\n")
+    
+    # Preguntar la ruta del proyecto destino
+    project_path = get_project_path()
+    print(f"✅ Proyecto: {project_path}\n")
+    
+    # Definir la carpeta de destino en el proyecto especificado
+    cursor_rules_target = project_path / ".cursor" / "rules"
     
     # Verificar que existe la carpeta de origen
     if not CURSOR_RULES_SOURCE.exists():
-        print(f"❌ Error: No se encuentra la carpeta {CURSOR_RULES_SOURCE}")
+        print(f"❌ Error: No se encuentra la carpeta {CURSOR_RULES_SOURCE}", file=sys.stderr)
         return 1
     
     # Crear carpeta de destino si no existe
-    CURSOR_RULES_TARGET.mkdir(parents=True, exist_ok=True)
+    cursor_rules_target.mkdir(parents=True, exist_ok=True)
+    print(f"📁 Directorio de destino: {cursor_rules_target}\n")
     
     # Reglas específicas del proyecto que NO deben ser generadas por el script
     EXCLUDED_RULES = [
@@ -98,12 +148,12 @@ def main():
         
         # Renombrar quitando _optimized del nombre
         target_name = rule_file.name.replace("_optimized", "")
-        target_file = CURSOR_RULES_TARGET / target_name
+        target_file = cursor_rules_target / target_name
         shutil.copy2(rule_file, target_file)
         print(f"✅ Copiada: {rule_file.name} → {target_name}")
         copied_count += 1
     
-    print(f"\n✅ Proceso completado. {copied_count} reglas copiadas a {CURSOR_RULES_TARGET}")
+    print(f"\n✅ Proceso completado. {copied_count} reglas copiadas a {cursor_rules_target}")
     print(f"\n📋 Colecciones disponibles para reglas específicas:")
     for collection in COLLECTIONS:
         print(f"   - {collection}")
