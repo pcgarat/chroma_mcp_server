@@ -32,6 +32,7 @@ from ..utils import (
     get_logger,
     get_chroma_client,
     get_embedding_function,
+    get_server_config,
     ValidationError,
     NumpyEncoder,  # Now defined and exported from utils.__init__
 )
@@ -40,6 +41,34 @@ from ..utils.config import validate_collection_name
 # --- Constants ---
 DEFAULT_QUERY_N_RESULTS = 10
 LEARNINGS_COLLECTION_NAME = "derived_learnings_v1"  # Define the learnings collection name
+
+
+# --- Helper to get server embedding function ---
+def _get_server_embedding_function():
+    """Get the embedding function configured for the server.
+    
+    This function is used when:
+    - Adding documents (to generate embeddings)
+    - Querying documents semantically (to convert query text to vector)
+    
+    Note: For operations like getting documents by ID or metadata filters,
+    the embedding function is not strictly required, but we use it for consistency.
+    
+    Raises:
+        McpError: If the embedding function cannot be loaded (e.g., missing API key).
+    """
+    server_ef_name = get_server_config().embedding_function_name
+    try:
+        return get_embedding_function(server_ef_name)
+    except Exception as e:
+        # If embedding function is required but not available, raise error
+        # This happens when trying to add/query documents that need embeddings
+        error_msg = f"Failed to get embedding function '{server_ef_name}': {e}. " \
+                   f"Embedding function is required for operations that use embeddings. " \
+                   f"Please configure the embedding function (e.g., set OPENAI_API_KEY for 'openai')."
+        logger = get_logger("tools.document")
+        logger.error(error_msg)
+        raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg)) from e
 
 
 # --- Helper for server-side timestamps ---
@@ -302,7 +331,8 @@ async def _add_document_impl(input_data: AddDocumentInput) -> List[types.TextCon
     logger.info(f"Adding 1 document to '{collection_name}' (generating ID). Increment index: {increment_index}")
     try:
         client = get_chroma_client()
-        collection = client.get_collection(name=collection_name)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
 
         # Generate unique ID for the document
         generated_id = str(uuid.uuid4())  # Singular
@@ -358,7 +388,8 @@ async def _add_document_with_id_impl(input_data: AddDocumentWithIDInput) -> List
     logger.info(f"Adding 1 document with ID '{id}' to '{collection_name}'. Increment index: {increment_index}")
     try:
         client = get_chroma_client()
-        collection = client.get_collection(name=collection_name)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
 
         logger.info(
             f"Adding 1 document with specified ID '{id}' to '{collection_name}' (no metadata). Increment index: {increment_index}"
@@ -430,7 +461,8 @@ async def _add_document_with_metadata_impl(input_data: AddDocumentWithMetadataIn
     )
     try:
         client = get_chroma_client()
-        collection = client.get_collection(name=collection_name)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
 
         logger.info(
             f"Adding 1 document with specified metadata to '{collection_name}' (generated ID). Increment index: {increment_index}"
@@ -504,7 +536,8 @@ async def _add_document_with_id_and_metadata_impl(
     )
     try:
         client = get_chroma_client()
-        collection = client.get_collection(name=collection_name)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
 
         logger.info(
             f"Adding 1 document with specified ID '{id}' and metadata to '{collection_name}'. Increment index: {increment_index}"
@@ -554,6 +587,8 @@ async def _get_documents_by_ids_impl(input_data: GetDocumentsByIdsInput) -> List
 
     try:
         client = get_chroma_client()
+        # For get operations by ID, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(collection_name)
         # Pass include=None to use ChromaDB defaults
         get_result: GetResult = collection.get(ids=ids)
@@ -615,6 +650,8 @@ async def _get_documents_with_where_filter_impl(
 
     try:
         client = get_chroma_client()
+        # For get operations with metadata filters, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(collection_name)
         # Pass limit/offset directly, Chroma client handles 0 or None appropriately if needed
         # If 0 means "not set", we need to convert it to None for the client call
@@ -689,6 +726,8 @@ async def _get_documents_with_document_filter_impl(
 
     try:
         client = get_chroma_client()
+        # For get operations with document filters, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(collection_name)
         # Pass limit/offset directly, converting 0 to None if needed by client
         effective_limit = limit if limit > 0 else None
@@ -747,6 +786,8 @@ async def _get_all_documents_impl(input_data: GetAllDocumentsInput) -> List[type
 
     try:
         client = get_chroma_client()
+        # For get all operations, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(collection_name)
         # Pass limit/offset directly, converting 0 to None if needed by client
         effective_limit = limit if limit > 0 else None
@@ -804,7 +845,10 @@ async def _update_document_content_impl(input_data: UpdateDocumentContentInput) 
     logger.info(f"Updating content for document ID '{id}' in '{collection_name}'.")
     try:
         client = get_chroma_client()
-        collection = client.get_collection(name=collection_name)
+        # For update operations, embedding function is required if updating document content
+        # (because ChromaDB needs to regenerate embeddings for the new content)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
 
         logger.info(f"Updating content for document ID '{id}' in '{collection_name}'.")
         # Update takes lists, even for single items
@@ -859,6 +903,8 @@ async def _update_document_metadata_impl(input_data: UpdateDocumentMetadataInput
     logger.info(f"Updating metadata for document '{document_id}' in '{collection_name}' with: {metadata_dict}")
     try:
         client = get_chroma_client()
+        # For metadata-only updates, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(name=collection_name)
 
         # Update the metadata
@@ -906,6 +952,8 @@ async def _delete_document_by_id_impl(input_data: DeleteDocumentByIdInput) -> Li
     logger.info(f"Deleting document by ID '{id}' from '{collection_name}'.")
     try:
         client = get_chroma_client()
+        # For delete operations, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(name=collection_name)
 
         # Delete the document by its ID
@@ -956,7 +1004,8 @@ async def _query_documents_impl(input_data: QueryDocumentsInput) -> List[types.T
     # 1. Query Primary Collection
     try:
         logger.debug(f"Querying primary collection: {primary_collection_name}")
-        primary_collection = client.get_collection(primary_collection_name)
+        embedding_function = _get_server_embedding_function()
+        primary_collection = client.get_collection(primary_collection_name, embedding_function=embedding_function)
         primary_results = primary_collection.query(
             query_texts=query_texts,
             n_results=n_results,
@@ -983,7 +1032,7 @@ async def _query_documents_impl(input_data: QueryDocumentsInput) -> List[types.T
     # 2. Query Learnings Collection
     try:
         logger.debug(f"Querying learnings collection: {LEARNINGS_COLLECTION_NAME}")
-        learnings_collection = client.get_collection(LEARNINGS_COLLECTION_NAME)
+        learnings_collection = client.get_collection(LEARNINGS_COLLECTION_NAME, embedding_function=embedding_function)
         learnings_results = learnings_collection.query(
             query_texts=query_texts,
             n_results=n_results,  # Request same number for now
@@ -1156,7 +1205,8 @@ async def _query_documents_with_where_filter_impl(
 
     try:
         client = get_chroma_client()
-        collection = client.get_collection(collection_name)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(collection_name, embedding_function=embedding_function)
         query_result: QueryResult = collection.query(
             query_texts=query_texts,
             where=where_filter,
@@ -1227,7 +1277,8 @@ async def _query_documents_with_document_filter_impl(
 
     try:
         client = get_chroma_client()
-        collection = client.get_collection(collection_name)
+        embedding_function = _get_server_embedding_function()
+        collection = client.get_collection(collection_name, embedding_function=embedding_function)
         query_result: QueryResult = collection.query(
             query_texts=query_texts,
             where_document=where_document_filter,
@@ -1285,6 +1336,8 @@ async def _get_documents_by_ids_include_impl(
 
     try:
         client = get_chroma_client()
+        # For get operations by ID, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(collection_name)
         get_result: GetResult = collection.get(ids=ids, include=include_fields)
         logger.debug(f"ChromaDB get result: {get_result}")

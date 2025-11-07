@@ -14,6 +14,14 @@ import asyncio
 from typing import List, Optional
 import importlib.metadata
 
+# Migrate deprecated PYTORCH_CUDA_ALLOC_CONF to PYTORCH_ALLOC_CONF
+# This prevents warnings from PyTorch dependencies (e.g., sentence-transformers)
+# Do this early, before any imports that might use PyTorch
+if "PYTORCH_CUDA_ALLOC_CONF" in os.environ and "PYTORCH_ALLOC_CONF" not in os.environ:
+    os.environ["PYTORCH_ALLOC_CONF"] = os.environ["PYTORCH_CUDA_ALLOC_CONF"]
+    # Optionally remove the deprecated variable to avoid confusion
+    # os.environ.pop("PYTORCH_CUDA_ALLOC_CONF", None)
+
 # Import app module to access main_stdio
 from chroma_mcp import app
 
@@ -46,8 +54,28 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         default=os.getenv("CHROMA_SERVER_MODE", "http"),
         help="Server mode: 'stdio' for stdio transport, 'http' for default HTTP server (or set CHROMA_SERVER_MODE).",
     )
+    # Try to get version from installed package, fallback to pyproject.toml or default
+    try:
+        version_str = importlib.metadata.version("chroma-mcp-server")
+    except importlib.metadata.PackageNotFoundError:
+        # Fallback: try to read from pyproject.toml
+        try:
+            # Use tomllib (Python 3.11+) or fallback to tomli
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib
+            pyproject_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "pyproject.toml")
+            if os.path.exists(pyproject_path):
+                with open(pyproject_path, "rb") as f:
+                    pyproject = tomllib.load(f)
+                    version_str = pyproject.get("project", {}).get("version", "0.0.0-dev")
+            else:
+                version_str = "0.0.0-dev"
+        except Exception:
+            version_str = "0.0.0-dev"
     parser.add_argument(
-        "--version", action="version", version=f'%(prog)s {importlib.metadata.version("chroma-mcp-server")}'
+        "--version", action="version", version=f'%(prog)s {version_str}'
     )  # Add version flag
 
     # Client configuration
@@ -142,12 +170,39 @@ def main() -> int:
     try:
         if args.mode == "stdio":
             # Initialize the Chroma client first!
-            print("Initializing Chroma client for stdio mode...", file=sys.stderr)
+            # In stdio mode, we should NOT write to stderr as it can corrupt the JSON protocol
+            # The logger will record these messages in log files
+            try:
+                from chroma_mcp.utils import get_logger, _main_logger_instance
+                if _main_logger_instance is not None:
+                    logger = get_logger("cli")
+                    logger.info("Initializing Chroma client for stdio mode...")
+            except Exception:
+                # Logger not configured yet, but we still don't print to stderr in stdio mode
+                pass
+            
             _initialize_chroma_client(args)
-            print("Chroma client initialized. Starting server in stdio mode...", file=sys.stderr)
+            
+            try:
+                from chroma_mcp.utils import get_logger, _main_logger_instance
+                if _main_logger_instance is not None:
+                    logger = get_logger("cli")
+                    logger.info("Chroma client initialized. Starting server in stdio mode...")
+            except Exception:
+                # Logger not configured yet, but we still don't print to stderr in stdio mode
+                pass
+            
             # Run the stdio server
             asyncio.run(app.main_stdio())
-            print("Stdio server finished.", file=sys.stderr)
+            
+            try:
+                from chroma_mcp.utils import get_logger, _main_logger_instance
+                if _main_logger_instance is not None:
+                    logger = get_logger("cli")
+                    logger.info("Stdio server finished.")
+            except Exception:
+                # Logger not configured yet, but we still don't print to stderr in stdio mode
+                pass
             # stdio mode might finish normally, so return 0
             return 0
         else:  # Default HTTP mode

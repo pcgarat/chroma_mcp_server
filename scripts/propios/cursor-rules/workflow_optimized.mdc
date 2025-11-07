@@ -1,0 +1,220 @@
+---
+alwaysApply: true
+---
+# Regla de Workflow de Testing - Siempre Aplicada
+
+## 🎯 Objetivo Principal
+**Garantizar la calidad del código mediante testing exhaustivo y cobertura adecuada en cada implementación de funcionalidad.**
+
+## 📋 Reglas Obligatorias
+
+### 1. **Testing Obligatorio en Cada Implementación**
+- ✅ **SIEMPRE** crear tests para nueva funcionalidad
+- ✅ **SIEMPRE** actualizar tests existentes cuando se modifique código
+- ✅ **NUNCA** implementar funcionalidad sin tests correspondientes
+- ✅ **NUNCA** hacer commit de código sin tests
+
+### 2. **Ejecución de Tests Post-Implementación**
+- ✅ **OBLIGATORIO** ejecutar todos los tests del bundle trabajado
+- ✅ **OBLIGATORIO** ejecutar tests de todas las clases implicadas
+- ✅ **OBLIGATORIO** verificar que todos los tests pasen (0 fallos, 0 errores)
+- ✅ **OBLIGATORIO** ejecutar tests antes de cada commit
+
+### 3. **Corrección de Tests Fallidos**
+- ✅ **SIEMPRE** corregir tests que fallen
+- ✅ **SIEMPRE** re-ejecutar tests después de correcciones
+- ✅ **NUNCA** dejar tests fallidos sin resolver
+- ✅ **NUNCA** hacer commit con tests fallidos
+
+### 4. **Cobertura de Código**
+- ✅ **OBJETIVO**: Cobertura cercana al 80%
+- ✅ **MÍNIMO**: 70% de cobertura de código
+- ✅ **IDEAL**: 80% o superior
+- ✅ **MÁXIMO**: 95% (evitar over-testing)
+
+## 🔧 Comandos de Testing
+
+### Ejecutar Tests del Bundle
+```bash
+# Tests completos del AutobizBundle
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/
+
+# Tests específicos de una clase
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/Application/Service/CreateAccountServiceTest.php
+
+# Tests con cobertura
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/ --coverage-html coverage/
+```
+
+### Verificar Cobertura
+```bash
+# Generar reporte de cobertura
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/ --coverage-text
+
+# Cobertura HTML (más detallada)
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/ --coverage-html coverage/
+```
+
+## 📊 Niveles de Cobertura por Capa
+
+### **Domain Layer** (Capa de Dominio)
+- **Objetivo**: 100% de cobertura
+- **Razón**: Lógica crítica de negocio
+- **Tests**: Unit tests exhaustivos
+
+### **Application Layer** (Capa de Aplicación)
+- **Objetivo**: 95% de cobertura
+- **Razón**: Casos de uso principales
+- **Tests**: Unit tests + Integration tests
+
+### **Infrastructure Layer** (Capa de Infraestructura)
+- **Objetivo**: 90% de cobertura
+- **Razón**: Adaptadores y servicios técnicos
+- **Tests**: Unit tests + Mock tests
+
+### **Command Layer** (Capa de Comandos)
+- **Objetivo**: 85% de cobertura
+- **Razón**: Interfaz de usuario (CLI)
+- **Tests**: Functional tests + Unit tests
+
+## 🧪 Tipos de Tests Requeridos
+
+### **Unit Tests** (Obligatorios)
+- ✅ Tests de cada método público
+- ✅ Tests de casos edge y excepciones
+- ✅ Tests de validaciones
+- ✅ Tests de lógica de negocio
+
+### **Integration Tests** (Recomendados)
+- ✅ Tests de flujos completos
+- ✅ Tests de interacción entre capas
+- ✅ Tests de persistencia de datos
+
+### **Functional Tests** (Para Comandos)
+- ✅ Tests end-to-end de comandos
+- ✅ Tests de opciones y argumentos
+- ✅ Tests de salida y logging
+
+## 📋 Checklist de Testing
+
+### **Antes de Implementar**
+- [ ] Identificar clases que se van a modificar
+- [ ] Revisar tests existentes
+- [ ] Planificar nuevos tests necesarios
+
+### **Durante la Implementación**
+- [ ] Escribir tests a la par del código
+- [ ] Ejecutar tests frecuentemente
+- [ ] Corregir tests que fallen
+
+### **Después de Implementar**
+- [ ] Ejecutar todos los tests del bundle
+- [ ] Verificar cobertura de código
+- [ ] Corregir cualquier test fallido
+- [ ] Re-ejecutar tests hasta que pasen todos
+
+### **Antes de Commit**
+- [ ] Tests del bundle: ✅ PASAN
+- [ ] Tests de clases implicadas: ✅ PASAN
+- [ ] Cobertura de código: ✅ ≥70%
+- [ ] 0 fallos, 0 errores: ✅ CONFIRMADO
+
+## 🚨 Reglas de Emergencia
+
+### **Si Tests Fallan**
+1. **NO hacer commit** hasta que pasen todos
+2. **Analizar** el motivo del fallo
+3. **Corregir** el código o el test según corresponda
+4. **Re-ejecutar** tests hasta que pasen
+5. **Verificar** cobertura antes de continuar
+
+### **Si Cobertura es Baja**
+1. **Identificar** código sin cobertura
+2. **Escribir** tests para código crítico
+3. **Priorizar** lógica de negocio
+4. **Re-ejecutar** tests y verificar cobertura
+
+## 📈 Métricas de Calidad
+
+### **Tests Exitosos**
+- ✅ **0 fallos** (failures)
+- ✅ **0 errores** (errors)
+- ✅ **0 warnings** (preferible)
+- ✅ **Tiempo de ejecución** < 30 segundos
+
+### **Cobertura de Código**
+- ✅ **Líneas cubiertas**: ≥70%
+- ✅ **Métodos cubiertos**: ≥80%
+- ✅ **Clases cubiertas**: ≥90%
+- ✅ **Branches cubiertos**: ≥60%
+
+## 🔄 Flujo de Trabajo Obligatorio
+
+### **1. Implementación**
+```bash
+# 1. Implementar funcionalidad
+# 2. Escribir/actualizar tests
+# 3. Ejecutar tests localmente
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/
+```
+
+### **2. Verificación**
+```bash
+# 4. Verificar cobertura
+docker exec ao-local-development-symfony php bin/phpunit tests/AutobizBundle/ --coverage-text
+
+# 5. Si hay fallos, corregir y re-ejecutar
+# 6. Repetir hasta que todos los tests pasen
+```
+
+### **3. Commit**
+```bash
+# 7. Solo hacer commit si:
+#    - Todos los tests pasen
+#    - Cobertura ≥70%
+#    - 0 fallos, 0 errores
+```
+
+## 🔗 Integración con ChromaDB
+
+### **Test Results Collection**
+Los resultados de tests se pueden almacenar en `test_results_v1`:
+- Resultados de tests unitarios e integración
+- Cobertura de código
+- Estado de tests (passed/failed)
+
+### **Validation Evidence Collection**
+La evidencia de validación se almacena en `validation_evidence_v1`:
+- Transiciones de tests (test fallido → test pasado)
+- Verificaciones de soluciones
+- Evidencia de corrección de bugs
+
+### **Uso en Workflow**
+- Vincular tests con código en `codebase_v1`
+- Usar resultados para validar cambios
+- Promover patrones de testing exitosos a `derived_learnings_v1`
+
+## ⚠️ Excepciones (Muy Limitadas)
+
+### **Solo se Permite Saltar Tests Si:**
+- 🔴 **Refactoring puro** (sin cambio de funcionalidad)
+- 🔴 **Cambios de documentación** únicamente
+- 🔴 **Configuración** de archivos no críticos
+
+### **NUNCA se Permite Saltar Tests Para:**
+- ❌ Nueva funcionalidad
+- ❌ Modificación de lógica de negocio
+- ❌ Cambios en APIs
+- ❌ Modificación de comandos
+- ❌ Cambios en servicios
+
+## 🎯 Resumen de Reglas
+
+1. **SIEMPRE** crear/actualizar tests con cada implementación
+2. **SIEMPRE** ejecutar todos los tests del bundle después de implementar
+3. **SIEMPRE** corregir tests fallidos antes de continuar
+4. **SIEMPRE** buscar cobertura cercana al 80%
+5. **NUNCA** hacer commit con tests fallidos
+6. **NUNCA** implementar funcionalidad sin tests
+
+**Esta regla se aplica SIEMPRE y es OBLIGATORIA para mantener la calidad del código.**

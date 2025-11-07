@@ -203,7 +203,23 @@ def _initialize_chroma_client(args: argparse.Namespace) -> None:
             raise McpError(ErrorData(code=INTERNAL_ERROR, message="chromadb library not installed"))
 
         client_type = client_config.client_type
-        embedding_function = get_embedding_function(client_config.embedding_function_name)
+        
+        # Log embedding function configuration before attempting to get it
+        ef_name = client_config.embedding_function_name
+        logger.info(f"Configuring embedding function: '{ef_name}'")
+        if ef_name.lower() == "openai":
+            openai_key = os.getenv("OPENAI_API_KEY")
+            openai_model = os.getenv("CHROMA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+            openai_dimensions = os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536")
+            logger.info(f"OpenAI configuration - API Key: {'SET' if openai_key else 'NOT SET'}, Model: {openai_model}, Dimensions: {openai_dimensions}")
+            if not openai_key:
+                error_msg = "OPENAI_API_KEY not found in environment variables. Required for 'openai' embedding function."
+                logger.error(error_msg)
+                raise McpError(ErrorData(code=INVALID_PARAMS, message=error_msg))
+        
+        # Get the embedding function - this will generate embeddings using OpenAI when needed
+        embedding_function = get_embedding_function(ef_name)
+        logger.info(f"Embedding function '{ef_name}' initialized successfully")
 
         if client_type == "persistent":
             data_path = client_config.data_dir or "./chroma_data"
@@ -215,9 +231,38 @@ def _initialize_chroma_client(args: argparse.Namespace) -> None:
             host = client_config.host or "localhost"
             port = client_config.port or 8000
             ssl = client_config.ssl
-            logger.info(f"Initializing HTTP ChromaDB client for: host={host}, port={port}, ssl={ssl}")
+            api_key = client_config.api_key
+            tenant = client_config.tenant
+            database = client_config.database
+            
+            # EXTENSION: Verificar/crear base de datos automáticamente para cliente HTTP
+            # Esta extensión personalizada no modifica el código core, solo agrega funcionalidad
+            try:
+                from chroma_mcp.extensions.database_manager import ensure_database_exists
+                verbose = os.getenv("LOG_LEVEL", "INFO").upper() == "DEBUG"
+                ensure_database_exists(
+                    host=host,
+                    port=int(port) if isinstance(port, str) else port,
+                    tenant=tenant,
+                    database=database,
+                    api_key=api_key,
+                    ssl=ssl,
+                    verbose=verbose,
+                )
+            except ImportError:
+                # Si las extensiones no están disponibles, continuar sin verificación
+                logger.debug("Extensiones personalizadas no disponibles, omitiendo verificación de base de datos")
+            except Exception as ext_error:
+                # No fallar si la extensión tiene problemas, solo loguear
+                logger.warning(f"Error en extensión de verificación de base de datos: {ext_error}")
+            
+            # Build headers if api_key is provided
+            headers = None
+            if api_key:
+                headers = {"Authorization": f"Bearer {api_key}"}
+            logger.info(f"Initializing HTTP ChromaDB client for: host={host}, port={port}, ssl={ssl}, tenant={tenant}, database={database}, auth={'Yes' if api_key else 'No'}")
             _chroma_client_instance = chromadb.HttpClient(
-                host=host, port=port, ssl=ssl, settings=Settings(anonymized_telemetry=False)
+                host=host, port=port, ssl=ssl, tenant=tenant, database=database, headers=headers, settings=Settings(anonymized_telemetry=False)
             )
         elif client_type == "cloud":
             # Assuming API key etc. are handled by chromadb library via env vars or config
@@ -260,13 +305,17 @@ def _initialize_chroma_client(args: argparse.Namespace) -> None:
             for coll_name in essential_collections:
                 try:
                     # Try to get the collection to see if it exists
-                    _chroma_client_instance.get_collection(name=coll_name, embedding_function=embedding_function)
+                    # For get operations, embedding function is NOT required
+                    # We only need embeddings for queries (semantic search) and adds (document embedding generation)
+                    _chroma_client_instance.get_collection(name=coll_name)
                     logger.debug(f"Essential collection '{coll_name}' already exists.")
                 except Exception as e:  # Broad exception to catch various ways Chroma might indicate non-existence
                     logger.info(
                         f"Essential collection '{coll_name}' not found (error: {type(e).__name__}), attempting to create..."
                     )
                     try:
+                        # For create operations, embedding function IS required
+                        # (because ChromaDB needs to know how to generate embeddings for new documents)
                         _chroma_client_instance.get_or_create_collection(
                             name=coll_name,
                             embedding_function=embedding_function,

@@ -1,0 +1,28 @@
+{
+  "name": "chroma_mcp_server",
+  "version": "1.0.0",
+  "description": "[![CI](https://github.com/djm81/chroma_mcp_server/actions/workflows/tests.yml/badge.svg)](https://github.com/djm81/chroma_mcp_server/actions/workflows/tests.yml) [![codecov](https://codecov.io/gh/djm81/chroma_mcp_server/branch/main/graph/badge.svg)](https://codecov.io/gh/djm81/chroma_mcp_server) [![PyPI - Version](https://img.shields.io/pypi/v/chroma-mcp-server?color=blue)](https://pypi.org/project/chroma-mcp-server)",
+  "homepage": "https://github.com/pcgarat/chroma_mcp_server#readme",
+  "bugs": {
+    "url": "https://github.com/pcgarat/chroma_mcp_server/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pcgarat/chroma_mcp_server.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "deepl-translator": "^1.2.1"
+  }
+}

@@ -1,0 +1,169 @@
+---
+alwaysApply: false
+---
+
+# Regla: Validation Evidence - Evidencia de Validación
+
+**Descripción:** Guía para capturar, vincular y usar evidencia de validación para respaldar soluciones y promover aprendizajes.
+
+## Qué es Validation Evidence
+
+La evidencia de validación (`validation_evidence_v1`) almacena:
+- **Transiciones de Tests**: Tests que cambian de fallido a pasado, demostrando que un fix funciona
+- **Resoluciones de Errores Runtime**: Errores que se detectan, corrigen y verifican
+- **Mejoras de Calidad de Código**: Mejoras medibles en métricas de calidad de código
+
+## Cuándo Capturar Validation Evidence
+
+### Transiciones de Tests
+- Cuando un test pasa después de haber fallado
+- Cuando se corrige un bug y los tests pasan
+- Cuando se implementa una nueva funcionalidad y los tests pasan
+
+### Resoluciones de Errores
+- Cuando se detecta y corrige un error en runtime
+- Cuando se verifica que el error está resuelto
+- Cuando se documenta la solución
+
+### Mejoras de Calidad
+- Cuando se mejora una métrica de calidad (cobertura, complejidad, etc.)
+- Cuando se refactoriza código y mejora la calidad
+- Cuando se elimina código duplicado o anti-patrones
+
+## Workflow de Validation Evidence
+
+### 1. Capturar Evidencia Inicial
+
+Antes de hacer cambios, capturar el estado inicial:
+- Estado de tests (fallidos)
+- Errores runtime existentes
+- Métricas de calidad actuales
+
+### 2. Implementar Solución
+
+Realizar los cambios necesarios:
+- Corregir código
+- Implementar funcionalidad
+- Refactorizar
+
+### 3. Verificar Solución
+
+Después de los cambios:
+- Ejecutar tests y verificar que pasan
+- Verificar que los errores están resueltos
+- Medir métricas de calidad mejoradas
+
+### 4. Registrar Evidencia
+
+Registrar la evidencia de validación:
+- Transiciones de tests (test fallido → test pasado)
+- Resoluciones de errores verificadas
+- Mejoras de calidad documentadas
+
+### 5. Vincular con Chat History
+
+Vincular la evidencia con:
+- Entradas de `chat_history_v1` relacionadas
+- Chunks de código en `codebase_v1` modificados
+- Thinking sessions relacionadas
+
+## Herramientas Disponibles
+
+### Registrar Transiciones de Tests
+```python
+# Registrar transición de test
+mcp_chroma_add_document_with_id_and_metadata(
+    collection_name="validation_evidence_v1",
+    document="Test UserServiceTest::testCreateUser pasó después de corregir validación de email. El test fallaba porque no se validaba el formato de email correctamente.",
+    id=f"test_transition_{timestamp}",
+    metadata='{"type": "test_transition", "test_name": "UserServiceTest::testCreateUser", "status_before": "failed", "status_after": "passed", "related_chat_id": "chat-123", "related_code_chunks": "src/UserService.php"}'
+)
+```
+
+### Registrar Resolución de Error
+```python
+# Registrar resolución de error
+mcp_chroma_add_document_with_id_and_metadata(
+    collection_name="validation_evidence_v1",
+    document="Error TypeError resuelto: 'Cannot read property value of undefined'. Solución: Añadidas verificaciones null antes de acceder a propiedades.",
+    id=f"error_resolution_{timestamp}",
+    metadata='{"type": "error_resolution", "error_type": "TypeError", "error_message": "Cannot read property value of undefined", "resolution": "Added null checks", "verified": true, "related_chat_id": "chat-456"}'
+)
+```
+
+### Registrar Mejora de Calidad
+```python
+# Registrar mejora de calidad
+mcp_chroma_add_document_with_id_and_metadata(
+    collection_name="validation_evidence_v1",
+    document="Mejora de cobertura de código: De 65% a 85% en UserService. Añadidos tests para casos edge y validaciones.",
+    id=f"quality_improvement_{timestamp}",
+    metadata='{"type": "quality_improvement", "metric": "coverage", "before": 0.65, "after": 0.85, "improvement_percentage": 30.77, "related_chat_id": "chat-789"}'
+)
+```
+
+## Integración con Derived Learnings
+
+### Usar Evidencia para Promover
+Cuando se promueve un aprendizaje:
+- Vincular `validation_evidence_id` con el aprendizaje
+- Incluir `validation_score` en el metadata
+- Referenciar transiciones de tests específicas
+
+### Validación Requerida
+Para aprendizajes críticos:
+- Requerir evidencia de validación antes de promover
+- Establecer umbral mínimo de `validation_score` (ej: 0.7)
+- Documentar la evidencia que respalda el aprendizaje
+
+## Integración con Test Results
+
+### Vincular Test Results
+Los resultados de tests (`test_results_v1`) pueden vincularse con:
+- `validation_evidence_v1`: Transiciones de tests
+- `chat_history_v1`: Conversaciones sobre tests
+- `codebase_v1`: Código bajo test
+
+### Workflow Completo
+1. Test falla → Registrar en `test_results_v1`
+2. Implementar fix → Registrar en `chat_history_v1`
+3. Test pasa → Registrar transición en `validation_evidence_v1`
+4. Vincular evidencia con chat history
+5. Promover a `derived_learnings_v1` si es valioso
+
+## Scoring de Evidencia
+
+### Factores de Puntuación
+- **Transiciones de Tests**: Peso 0.5 (50%)
+  - Número de transiciones
+  - Importancia de los tests
+  - Cobertura del código afectado
+- **Resoluciones de Errores**: Peso 0.3 (30%)
+  - Severidad del error
+  - Estado de verificación
+  - Alcance del impacto
+- **Mejoras de Calidad**: Peso 0.2 (20%)
+  - Porcentaje de mejora
+  - Tipo de métrica
+  - Tamaño del código afectado
+
+### Cálculo de Score
+El score final es un promedio ponderado de estos componentes, normalizado a un rango 0-1.
+
+## Mejores Prácticas
+
+### Captura de Evidencia
+- Capturar evidencia lo más cerca posible del momento de implementación
+- Capturar datos "antes" antes de hacer cambios
+- Ser específico sobre archivos y componentes afectados
+- Verificar resoluciones antes de marcarlas como verificadas
+
+### Combinación de Evidencia
+- Combinar múltiples tipos de evidencia para validación más fuerte
+- Usar convenciones de nombres y tags consistentes
+- Vincular evidencia relacionada entre sí
+
+### Mantenimiento
+- Revisar evidencia periódicamente para relevancia
+- Actualizar evidencia si cambia el contexto
+- Retirar evidencia obsoleta o incorrecta

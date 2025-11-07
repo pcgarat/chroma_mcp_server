@@ -1,0 +1,242 @@
+---
+alwaysApply: false
+---
+
+# Regla: Daily Workflow Integration - Integración del "Second Brain" en el Flujo Diario
+
+**Descripción:** Guía para integrar activamente el "Second Brain" (ChromaDB) en el flujo de trabajo diario de desarrollo, aprovechando el conocimiento acumulado para acelerar el desarrollo.
+
+## Principio Central: Active Knowledge Engagement
+
+El "Second Brain" no es solo un repositorio pasivo; es un recurso que debe ser activamente utilizado. Esta regla guía cuándo y cómo consultar las colecciones de ChromaDB durante el desarrollo diario.
+
+## Escenarios de Uso Diario
+
+### 1. Contextual Code Understanding & Troubleshooting
+
+**Cuándo usar:**
+- Al revisar código complejo
+- Al recibir un bug report
+- Al intentar recordar fixes previos
+- Al entender por qué se implementó algo de cierta manera
+
+**Acciones:**
+```python
+# Buscar historia y contexto de una función
+mcp_chroma_query_documents(
+    collection_name="chat_history_v1",
+    query_texts=[f"historia función {function_name} en {file_path}"],
+    n_results=5
+)
+
+# Buscar discusiones sobre un módulo específico
+mcp_chroma_query_documents(
+    collection_name="chat_history_v1",
+    query_texts=[f"discusión módulo {module_name} {specific_concept}"],
+    n_results=5
+)
+
+# Buscar fixes previos relacionados
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=[f"bug fix {error_description} {module_name}"],
+    n_results=3
+)
+```
+
+**Preguntas típicas del usuario:**
+- "¿Cuál es la historia de esta función `[function_name]` en `[file_path]`?"
+- "¿Por qué se implementó esta sección de código de esta manera?"
+- "Tuvimos un bug relacionado con `[error_description]` en `[module_name]`. ¿Cómo lo resolvimos?"
+- "Muéstrame discusiones y cambios de código relacionados con `[feature_name]` que también tocaron `[specific_concept]`"
+
+### 2. Recalling Design Rationale & Past Decisions
+
+**Cuándo usar:**
+- Al necesitar recordar el razonamiento detrás de una decisión arquitectónica
+- Al revisar decisiones de diseño pasadas
+- Al entender el contexto de decisiones complejas
+
+**Acciones:**
+```python
+# Buscar sesiones de pensamiento sobre un tema
+mcp_chroma_find_similar_thoughts(
+    query=f"consideraciones arquitectura {topic/feature_name}",
+    session_id="",  # Buscar en todas las sesiones
+    n_results=5,
+    threshold=0.7,
+    include_branches=True
+)
+
+# Obtener resumen de una sesión específica
+mcp_chroma_get_session_summary(
+    session_id="session-id",
+    include_branches=True
+)
+```
+
+**Preguntas típicas del usuario:**
+- "¿Cuáles fueron mis principales consideraciones cuando grabé pensamientos sobre la arquitectura de `[topic/feature_name]`?"
+- "¿Puedes recuperar mi sesión de pensamiento sobre `[specific_problem]`?"
+
+### 3. Leveraging Validated Solutions from Test Data
+
+**Cuándo usar:**
+- Cuando un test está fallando
+- Al encontrar un error que parece familiar
+- Al buscar soluciones validadas para problemas conocidos
+
+**Acciones:**
+```python
+# Buscar tests similares que fueron corregidos
+mcp_chroma_query_documents(
+    collection_name="test_results_v1",
+    query_texts=[f"test {test_name} failure fix"],
+    n_results=5
+)
+
+# Buscar fixes validados relacionados
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=[f"error {error_message} validated fix"],
+    n_results=3
+)
+
+# Buscar evidencia de validación
+mcp_chroma_query_documents(
+    collection_name="validation_evidence_v1",
+    query_texts=[f"test transition {test_name}"],
+    n_results=3
+)
+```
+
+**Preguntas típicas del usuario:**
+- "Este test `[test_name]` está fallando. ¿Hemos visto fallos similares que fueron corregidos, y cuál fue la solución?"
+- "Estoy obteniendo `[error_message]`. ¿Puedes encontrar fixes validados o derived learnings relevantes?"
+
+### 4. Starting a New Feature
+
+**Cuándo usar:**
+- Al comenzar una nueva funcionalidad
+- Al diseñar una nueva característica
+- Al planificar implementación
+
+**Acciones:**
+```python
+# Buscar patrones existentes relacionados
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=[f"patrón {feature_name} implementación"],
+    n_results=5
+)
+
+# Buscar componentes relacionados en codebase
+mcp_chroma_query_documents(
+    collection_name="codebase_v1",
+    query_texts=[f"componente {feature_name} similar"],
+    n_results=5
+)
+
+# Buscar sesiones de pensamiento sobre el tema
+mcp_chroma_find_similar_thoughts(
+    query=f"feature {feature_name} approach design",
+    n_results=3
+)
+```
+
+**Preguntas típicas del usuario:**
+- "Basándome en mis pensamientos recientes sobre `[feature_name]`, y considerando nuestro `codebase_v1` y `derived_learnings_v1`, ¿hay patrones o componentes existentes que debería aprovechar?"
+
+### 5. Code Review
+
+**Cuándo usar:**
+- Al revisar un Pull Request
+- Al evaluar cambios propuestos
+- Al verificar consistencia con patrones establecidos
+
+**Acciones:**
+```python
+# Buscar derived learnings relevantes
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=[f"patrón {component_or_logic} best practice"],
+    n_results=5
+)
+
+# Buscar discusiones previas sobre el componente
+mcp_chroma_query_documents(
+    collection_name="chat_history_v1",
+    query_texts=[f"discusión {component_or_logic} pattern"],
+    n_results=5
+)
+
+# Buscar tests relacionados
+mcp_chroma_query_documents(
+    collection_name="test_results_v1",
+    query_texts=[f"test {module_affected_by_PR} recent fix"],
+    n_results=5
+)
+```
+
+**Preguntas típicas del usuario:**
+- "¿Hay entradas en `derived_learnings_v1` o discusiones previas en `chat_history_v1` relevantes para los patrones usados en este PR para `[specific_component_or_logic]`?"
+- "¿Hubo tests relacionados con `[module_affected_by_PR]` que fueron recientemente corregidos, y este PR se alinea con esos fixes?"
+
+## Workflow de Mañana (Morning Review)
+
+**Rutina sugerida:**
+1. Revisar interacciones de AI de alta calidad del día anterior
+2. Identificar candidatos para promoción a `derived_learnings_v1`
+3. Promover aprendizajes valiosos usando `review-and-promote`
+
+**Acciones:**
+```python
+# Buscar entradas de chat con alta confianza
+mcp_chroma_get_documents_with_where_filter(
+    collection_name="chat_history_v1",
+    where='{"confidence_score": {"$gt": 0.8}, "status": "captured"}',
+    limit=10
+)
+```
+
+## Workflow de Análisis Post-Testing
+
+**Cuándo usar:**
+- Después de corregir tests flaky
+- Después de una serie de commits que arreglaron tests
+- Al analizar transiciones de tests
+
+**Acciones:**
+```python
+# Buscar transiciones de tests recientes
+mcp_chroma_query_documents(
+    collection_name="validation_evidence_v1",
+    query_texts=["test transition failure to pass recent"],
+    n_results=10
+)
+
+# Buscar evidencia de validación de fixes
+mcp_chroma_query_documents(
+    collection_name="validation_evidence_v1",
+    query_texts=["test fix validation evidence"],
+    n_results=5
+)
+```
+
+## Precondiciones para Uso Efectivo
+
+Para aprovechar al máximo estas capacidades:
+
+1. **Commits de Git Consistentes:** `codebase_v1` depende de commits frecuentes y significativos
+2. **Uso Activo del AI Assistant:** La riqueza de `chat_history_v1` depende del uso del AI assistant
+3. **Uso de Thinking Tools:** Usar `record-thought` para decisiones de diseño importantes
+4. **Curación Regular:** Dedicar tiempo a `analyze-chat-history` y `review-and-promote`
+5. **Test Suite y Reporting:** Tener un test suite que genere JUnit XML para `test_results_v1`
+
+## Mejores Prácticas
+
+1. **Consultar antes de implementar** - Buscar soluciones existentes antes de crear nuevas
+2. **Priorizar Derived Learnings** - Usar soluciones validadas cuando estén disponibles
+3. **Vincular con contexto** - Siempre incluir contexto de dónde se encontró la información
+4. **Promover aprendizajes** - Cuando se identifica un patrón valioso, promoverlo a `derived_learnings_v1`
+5. **Documentar decisiones** - Usar thinking sessions para decisiones arquitectónicas importantes

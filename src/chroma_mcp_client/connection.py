@@ -95,6 +95,7 @@ def get_client_and_ef(
         ssl=os.getenv("CHROMA_SSL", "false").lower() in ["true", "1", "yes"],
         tenant=os.getenv("CHROMA_TENANT", chromadb.DEFAULT_TENANT),
         database=os.getenv("CHROMA_DATABASE", chromadb.DEFAULT_DATABASE),
+        api_key=os.getenv("CHROMA_API_KEY"),  # Add API key for HTTP client authentication
         # embedding_function_name is NOT part of client connection config
         # Add any other required fields from ServerConfig here
     )
@@ -113,7 +114,25 @@ def get_client_and_ef(
     #    (EF name is often part of the general config, not client-specific connection)
     ef_name = os.getenv("CHROMA_EMBEDDING_FUNCTION", "default")  # Use default if not set
     print(f"Getting Embedding Function ('{ef_name}')...", file=sys.stderr)
-    embedding_function: Optional[chromadb.EmbeddingFunction] = get_embedding_function(ef_name)
+    
+    # Debug: Check if API key is available for OpenAI
+    if ef_name.lower() == "openai":
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            error_msg = "OPENAI_API_KEY not found in environment variables. Please set it in your .env file or environment."
+            print(f"ERROR: {error_msg}", file=sys.stderr)
+            raise RuntimeError(error_msg)
+        print(f"DEBUG: OPENAI_API_KEY is {'SET' if openai_key else 'NOT SET'} (length: {len(openai_key) if openai_key else 0})", file=sys.stderr)
+    
+    try:
+        embedding_function: Optional[chromadb.EmbeddingFunction] = get_embedding_function(ef_name)
+    except Exception as e:
+        error_msg = f"Error getting embedding function ('{ef_name}'): {e}"
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
+        # Re-raise with more context
+        raise RuntimeError(error_msg) from e
 
     print("Client and EF initialization complete.", file=sys.stderr)
     return client, embedding_function

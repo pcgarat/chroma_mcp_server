@@ -95,6 +95,42 @@ def get_collection_settings(
         "hnsw:num_threads": 4,
     }
 
+    # EXTENSION: Leer configuración global de distancia desde variables de entorno
+    # Esta extensión permite usar CHROMA_DISTANCE_METRIC sin modificar la firma de la función
+    distance_metric = os.getenv("CHROMA_DISTANCE_METRIC")
+    if distance_metric:
+        # Mapear distance_metric a hnsw:space
+        metric_map = {
+            "cosine": "cosine",
+            "l2": "l2",
+            "ip": "ip",
+            "inner_product": "ip",
+        }
+        mapped_space = metric_map.get(distance_metric.lower())
+        if mapped_space:
+            default_settings["hnsw:space"] = mapped_space
+            logger.debug(f"Using distance metric from CHROMA_DISTANCE_METRIC: {distance_metric} -> {mapped_space}")
+        else:
+            logger.warning(f"Unknown CHROMA_DISTANCE_METRIC value: {distance_metric}, using default 'cosine'")
+
+    # EXTENSION: Leer metadata de colección desde CHROMA_COLLECTION_METADATA
+    # Permite configurar metadata adicional desde variables de entorno
+    collection_metadata_str = os.getenv("CHROMA_COLLECTION_METADATA")
+    if collection_metadata_str:
+        try:
+            import json
+            collection_metadata = json.loads(collection_metadata_str)
+            if isinstance(collection_metadata, dict):
+                # Merge metadata from environment into default settings
+                default_settings.update(collection_metadata)
+                logger.debug(f"Loaded collection metadata from CHROMA_COLLECTION_METADATA: {collection_metadata}")
+            else:
+                logger.warning("CHROMA_COLLECTION_METADATA must be a JSON object")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in CHROMA_COLLECTION_METADATA: {e}")
+        except Exception as e:
+            logger.warning(f"Error parsing CHROMA_COLLECTION_METADATA: {e}")
+
     # Override with provided parameters
     if hnsw_space:
         default_settings["hnsw:space"] = hnsw_space

@@ -116,6 +116,7 @@ Here is an example `.cursor/mcp.json` configuration demonstrating how to set up 
 | `CHROMA_API_KEY` | API key for Cloud client | None | `sk_...` |
 | `CPU_EXECUTION_PROVIDER` | Force CPU execution provider | `auto` | `true`, `false`, `auto` |
 | `CHROMA_EMBEDDING_FUNCTION` | Name of the embedding function to use. API keys may be needed for some. | `default` | `default`, `fast`, `accurate`, `openai`, `cohere`, `huggingface`, `jina`, `voyageai`, `gemini` |
+| `CHROMA_OPENAI_EMBEDDING_MODEL` | OpenAI embedding model name (only when using `openai` embedding function) | `text-embedding-ada-002` | `text-embedding-ada-002`, `text-embedding-3-small`, `text-embedding-3-large` |
 | `LOG_LEVEL` | Log level for server | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `MCP_LOG_LEVEL` | Log level for MCP interface | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 

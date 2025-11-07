@@ -1,0 +1,143 @@
+---
+alwaysApply: false
+---
+
+# Regla: Thinking Sessions - Sesiones de Pensamiento Estructurado
+
+**Descripción:** Guía para usar sesiones de pensamiento estructurado cuando se necesita capturar cadenas de razonamiento complejas o decisiones arquitectónicas importantes.
+
+## Cuándo Usar Thinking Sessions
+
+### Casos de Uso Principales
+- **Decisiones Arquitectónicas**: Elegir tecnologías, patrones o enfoques
+- **Troubleshooting Complejo**: Resolver bugs o problemas de rendimiento difíciles
+- **Diseño de Algoritmos**: Analizar enfoques para problemas computacionales
+- **Análisis de Trade-offs**: Evaluar opciones con múltiples factores en competencia
+- **Aprendizaje de Conceptos**: Documentar tu comprensión mientras se desarrolla
+- **Code Reviews**: Capturar razonamiento sobre cambios sugeridos
+
+### Activación Automática
+Usar `mcp_chroma_sequential_thinking` cuando:
+- El usuario pregunta "¿por qué decidimos...?" o "¿cómo llegamos a...?"
+- Se está analizando múltiples opciones o alternativas
+- Se necesita documentar el razonamiento detrás de una decisión importante
+- Se está trabajando en un problema complejo que requiere múltiples pasos de razonamiento
+
+## Herramientas Disponibles
+
+### Registrar Pensamientos Secuenciales
+```python
+mcp_chroma_sequential_thinking(
+    thought="Pensamiento 1 de 3: Necesitamos decidir sobre la tecnología de base de datos. Los requisitos son...",
+    thought_number=1,
+    total_thoughts=3,
+    session_id="",  # Vacío para generar nuevo ID
+    next_thought_needed=True
+)
+```
+
+### Crear Ramas de Pensamiento
+```python
+mcp_chroma_sequential_thinking(
+    thought="Pensamiento alternativo: Enfoque B involucra denormalizar el esquema...",
+    thought_number=3,
+    total_thoughts=3,
+    session_id="session-id-existente",
+    branch_id="approach-b",
+    branch_from_thought=2,  # Rama desde el pensamiento 2
+    next_thought_needed=False
+)
+```
+
+### Encontrar Pensamientos Similares
+```python
+mcp_chroma_find_similar_thoughts(
+    query="estrategia de caché para endpoints de API",
+    session_id="",  # Vacío para buscar en todas las sesiones
+    n_results=3,
+    threshold=0.7,
+    include_branches=True
+)
+```
+
+### Obtener Resumen de Sesión
+```python
+mcp_chroma_get_session_summary(
+    session_id="session-id",
+    include_branches=True
+)
+```
+
+## Mejores Prácticas
+
+### Estructura de Pensamientos
+1. **Numerar explícitamente**: Usar formato "Pensamiento 1 de N", "Pensamiento 2 de N"
+2. **Progresión lógica**:
+   - Empezar con definición del problema y contexto
+   - Continuar con recopilación de información y análisis
+   - Explorar opciones con pros/contras
+   - Concluir con decisiones y próximos pasos
+3. **Incluir alternativas**: Documentar caminos no tomados y por qué
+4. **Vincular recursos**: Código, referencias, o documentación relacionada
+5. **Usar IDs de sesión consistentes**: Mantener continuidad del pensamiento
+
+### Integración con Otras Colecciones
+- **Vincular con `chat_history_v1`**: Referenciar conversaciones relacionadas
+- **Vincular con `codebase_v1`**: Referenciar chunks de código relevantes
+- **Vincular con `validation_evidence_v1`**: Referenciar evidencia de validación
+- **Promover a `derived_learnings_v1`**: Elevar patrones de pensamiento importantes
+
+## Ejemplo de Uso
+
+### Sesión de Pensamiento Completa
+```python
+# Pensamiento 1: Definición del problema
+mcp_chroma_sequential_thinking(
+    thought="Pensamiento 1 de 4: Necesitamos decidir sobre la tecnología de base de datos. Los requisitos clave son alta consistencia, soporte SQL y escalabilidad horizontal.",
+    thought_number=1,
+    total_thoughts=4,
+    next_thought_needed=True
+)
+# Guardar session_id devuelto
+
+# Pensamiento 2: Análisis de opciones
+mcp_chroma_sequential_thinking(
+    thought="Pensamiento 2 de 4: Las opciones que consideramos son PostgreSQL, MongoDB y Redis. PostgreSQL ofrece ACID y SQL, MongoDB proporciona flexibilidad de documentos, y Redis destaca en velocidad.",
+    thought_number=2,
+    total_thoughts=4,
+    session_id="session-id",
+    next_thought_needed=True
+)
+
+# Pensamiento 3: Evaluación
+mcp_chroma_sequential_thinking(
+    thought="Pensamiento 3 de 4: Analizando contra nuestros requisitos: PostgreSQL puntúa 9/10 en consistencia, 10/10 en SQL, 7/10 en escalabilidad. MongoDB puntúa 7/10, 0/10, 9/10. Redis puntúa 5/10, 0/10, 10/10.",
+    thought_number=3,
+    total_thoughts=4,
+    session_id="session-id",
+    next_thought_needed=True
+)
+
+# Pensamiento 4: Decisión final
+mcp_chroma_sequential_thinking(
+    thought="Pensamiento 4 de 4: Por lo tanto, usaremos PostgreSQL. Aunque tiene puntuaciones de escalabilidad más bajas que las alternativas, nuestros requisitos de consistencia y SQL son no negociables, y podemos abordar el escalado con réplicas de lectura y connection pooling.",
+    thought_number=4,
+    total_thoughts=4,
+    session_id="session-id",
+    next_thought_needed=False
+)
+```
+
+## Integración con Enhanced Context Capture
+
+Las sesiones de pensamiento pueden vincularse con:
+- **Chat History**: Entradas de `chat_history_v1` que contienen el contexto de la discusión
+- **Code Chunks**: Chunks de código en `codebase_v1` que fueron modificados o discutidos
+- **Validation Evidence**: Evidencia en `validation_evidence_v1` que valida el razonamiento
+
+## Promoción a Derived Learnings
+
+Cuando un patrón de pensamiento demuestra ser valioso:
+1. Buscar sesiones de pensamiento relevantes usando `mcp_chroma_find_similar_thoughts`
+2. Revisar el resumen completo de la sesión usando `mcp_chroma_get_session_summary`
+3. Promover insights clave a `derived_learnings_v1` usando el workflow de promoción

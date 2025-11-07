@@ -35,6 +35,13 @@ from ..utils.config import get_collection_settings, validate_collection_name
 from ..types import ChromaClientConfig
 
 
+# --- Helper to get server embedding function ---
+def _get_server_embedding_function():
+    """Get the embedding function configured for the server."""
+    server_ef_name = get_server_config().embedding_function_name
+    return get_embedding_function(server_ef_name)
+
+
 # --- Helper for server-side timestamps ---
 def _ensure_server_timestamp(metadata: dict) -> dict:
     """
@@ -356,7 +363,8 @@ async def _get_collection_impl(input_data: GetCollectionInput) -> List[types.Tex
         validate_collection_name(collection_name)
         # -------------------------
         client = get_chroma_client()
-        # Use get_collection which raises an error if not found
+        # For get_collection operations, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(name=collection_name)
 
         count = collection.count()
@@ -443,6 +451,8 @@ async def _rename_collection_impl(input_data: RenameCollectionInput) -> List[typ
 
         # Check if original collection exists
         logger.info(f"Attempting to rename collection '{original_name}' to '{new_name}'.")
+        # For rename operations, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(name=original_name)
 
         # Attempt to modify the name
@@ -589,6 +599,8 @@ async def _peek_collection_impl(input_data: PeekCollectionInput) -> List[types.T
         validate_collection_name(collection_name)
         # -------------------------
         client = get_chroma_client()
+        # For peek operations, embedding function is NOT required
+        # We only need embeddings for queries (semantic search) and adds (document embedding generation)
         collection = client.get_collection(name=collection_name)
 
         # Call peek with the validated limit (pass directly as it has a non-zero default)

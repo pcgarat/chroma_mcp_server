@@ -1,0 +1,179 @@
+---
+alwaysApply: true
+---
+
+# Regla Principal de Memoria Persistente - Optimizada
+
+## Búsqueda Automática Obligatoria
+
+### Al Inicio de Cada Prompt
+**SIEMPRE** ejecutar antes de responder:
+
+```python
+# Búsqueda principal en codebase
+mcp_chroma_query_documents(
+    collection_name="codebase_v1",
+    query_texts=[prompt_del_usuario],
+    n_results=5
+)
+
+# Búsqueda en derived learnings para patrones validados
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=[prompt_del_usuario],
+    n_results=3
+)
+```
+
+## Comportamiento Obligatorio
+
+### Formato de Respuesta
+- **SIEMPRE** mostrar "🔍 Contexto de Memoria:" al inicio si hay resultados relevantes
+- **SIEMPRE** incluir resultados encontrados cuando sean útiles
+- **SIEMPRE** usar contexto para enriquecer la respuesta
+
+### Colecciones Disponibles
+Las colecciones reales de ChromaDB según `reset_collections.py`:
+- `codebase_v1` - Código fuente del proyecto
+- `chat_history_v1` - Historial de conversaciones con contexto enriquecido
+- `derived_learnings_v1` - Aprendizajes derivados y patrones validados
+- `thinking_sessions_v1` - Sesiones de pensamiento estructurado
+- `validation_evidence_v1` - Evidencia de validación (tests, verificaciones)
+- `test_results_v1` - Resultados de tests
+
+## Enhanced Context Capture
+
+### Características Clave
+- **Code Diff Extraction**: Captura automática de cambios en código
+- **Tool Sequence Tracking**: Seguimiento de secuencia de herramientas usadas
+- **Bidirectional Linking**: Enlaces bidireccionales entre código y conversaciones
+- **Confidence Scoring**: Puntuación de confianza para interacciones
+
+### Uso de Contexto Enriquecido
+Al consultar `chat_history_v1`, el contexto incluye:
+- Diferencias de código (diffs)
+- Secuencia de herramientas utilizadas
+- Tipo de modificación (refactor/bugfix/feature/documentation)
+- Puntuación de confianza
+- Enlaces a código relacionado
+
+## Derived Learnings Workflow
+
+### Promoción de Aprendizajes
+Los aprendizajes derivados (`derived_learnings_v1`) son patrones validados y curados manualmente:
+- Promover desde `chat_history_v1` cuando hay alta confianza
+- Vincular con `validation_evidence_v1` cuando hay evidencia de tests
+- Usar en búsquedas RAG para priorizar soluciones validadas
+
+### Uso en Búsquedas
+```python
+# Buscar en derived learnings para patrones validados
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=["patrón solución validada"],
+    n_results=3
+)
+```
+
+## Thinking Sessions
+
+### Uso de Sesiones de Pensamiento
+Las sesiones de pensamiento (`thinking_sessions_v1`) permiten:
+- Registrar cadenas de pensamiento secuenciales
+- Crear ramas de pensamiento alternativas
+- Encontrar pensamientos similares entre sesiones
+
+### Integración con Contexto
+Las sesiones de pensamiento pueden vincularse con:
+- Entradas de `chat_history_v1`
+- Chunks de código en `codebase_v1`
+- Evidencia de validación en `validation_evidence_v1`
+
+## Validation Evidence
+
+### Evidencia de Validación
+La colección `validation_evidence_v1` almacena:
+- Transiciones de tests (test fallido → test pasado)
+- Verificaciones de soluciones
+- Evidencia de corrección de bugs
+
+### Uso en Workflow
+- Vincular evidencia con derived learnings
+- Validar soluciones antes de promover
+- Rastrear correcciones de bugs
+
+## Test Results Integration
+
+### Resultados de Tests
+La colección `test_results_v1` almacena:
+- Resultados de tests unitarios e integración
+- Cobertura de código
+- Estado de tests (passed/failed)
+
+### Integración con Código
+- Vincular tests con código en `codebase_v1`
+- Usar resultados para validar cambios
+- Promover patrones de testing exitosos
+
+## Auto-Guardado Inteligente
+
+### Detección Automática
+- Si se menciona "decidimos", "decidir" → considerar guardar en `derived_learnings_v1`
+- Si se menciona "bug", "error" → buscar en `validation_evidence_v1` y `chat_history_v1`
+- Si se menciona "test", "testing" → buscar en `test_results_v1` y `validation_evidence_v1`
+
+### Patrones Arquitectónicos
+- Repository Pattern → buscar en `derived_learnings_v1`
+- Service Pattern → buscar en `derived_learnings_v1`
+- Controller Pattern → buscar en `derived_learnings_v1`
+
+## Optimización de Rendimiento
+
+### Colecciones Prioritarias
+1. `codebase_v1` - Búsqueda principal de código
+2. `derived_learnings_v1` - Patrones validados (priorizar)
+3. `chat_history_v1` - Contexto histórico
+4. `test_results_v1` - Resultados de tests
+5. `validation_evidence_v1` - Evidencia de validación
+6. `thinking_sessions_v1` - Sesiones de pensamiento
+
+### Límites de Búsqueda
+- Máximo 5 resultados por colección principal
+- Máximo 3 resultados por colección secundaria
+- Priorizar resultados de `derived_learnings_v1` cuando existan
+
+## Integración con MCP
+
+### Herramientas Disponibles
+- `mcp_chroma_query_documents`: Búsqueda semántica en colecciones
+- `mcp_chroma_add_document_with_id_and_metadata`: Guardar documentos
+- `mcp_chroma_get_documents_by_ids`: Recuperar documentos específicos
+- `mcp_chroma_update_document_content`: Actualizar contenido
+- `mcp_chroma_delete_document_by_id`: Eliminar documentos
+- `mcp_chroma_log_chat`: Logging automático de chat con contexto enriquecido
+- `mcp_chroma_sequential_thinking`: Registrar pensamientos secuenciales
+- `mcp_chroma_find_similar_thoughts`: Encontrar pensamientos similares
+
+### Flujo de Trabajo
+1. **Búsqueda automática** en `codebase_v1` y `derived_learnings_v1`
+2. **Búsqueda contextual** según palabras clave en otras colecciones
+3. **Enriquecimiento** de respuesta con contexto
+4. **Auto-logging** de sesiones significativas (via `auto_log_chat.mdc`)
+5. **Promoción** de aprendizajes cuando sea apropiado
+
+## Mejores Prácticas
+
+### Búsqueda Semántica
+- Usar descripciones naturales en lugar de términos técnicos exactos
+- Ejemplo: "servicio de autenticación" en lugar de "AuthService"
+- Combinar contexto con búsqueda específica
+
+### Metadata Rica
+- Siempre incluir metadata descriptiva
+- Usar tags consistentes
+- Vincular con código y conversaciones relacionadas
+
+### Mantenimiento Continuo
+- Revisar `derived_learnings_v1` periódicamente
+- Promover aprendizajes de alta calidad desde `chat_history_v1`
+- Vincular evidencia de validación con aprendizajes

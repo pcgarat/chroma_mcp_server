@@ -1,0 +1,185 @@
+---
+alwaysApply: false
+---
+
+# Regla: Derived Learnings Workflow - Promoción de Aprendizajes
+
+**Descripción:** Guía para identificar, validar y promover aprendizajes derivados desde `chat_history_v1` y `validation_evidence_v1` hacia `derived_learnings_v1`.
+
+## Qué son Derived Learnings
+
+Los Derived Learnings (`derived_learnings_v1`) son patrones validados y curados manualmente que representan conocimiento probado y reutilizable. Son promovidos desde:
+- **Chat History**: Interacciones con alta confianza, diffs significativos, o resultados de tests positivos
+- **Validation Evidence**: Transiciones de tests exitosas (test fallido → test pasado)
+- **Thinking Sessions**: Patrones de razonamiento que han demostrado ser efectivos
+
+## Cuándo Promover Aprendizajes
+
+### Candidatos para Promoción
+- **Alta Confianza**: Entradas de `chat_history_v1` con `confidence_score` > 0.8
+- **Evidencia de Validación**: Soluciones respaldadas por `validation_evidence_v1`
+- **Patrones Recurrentes**: Soluciones que se han aplicado exitosamente múltiples veces
+- **Decisiones Arquitectónicas**: Decisiones importantes con justificación clara
+- **Soluciones a Problemas Comunes**: Bugs o problemas que se resuelven de forma consistente
+
+### Cuándo NO Promover
+- Soluciones no validadas o sin evidencia
+- Decisiones temporales o experimentales
+- Patrones que aún están en evaluación
+- Soluciones específicas de un contexto muy particular sin generalización
+
+## Workflow de Promoción
+
+### 1. Identificar Candidatos
+
+Buscar en `chat_history_v1` entradas con:
+- Alta confianza (`confidence_score` > 0.8)
+- Diferencias de código significativas
+- Evidencia de validación vinculada
+- Estado `analyzed` o `ready_for_promotion`
+
+```python
+# Buscar candidatos para promoción
+mcp_chroma_query_documents(
+    collection_name="chat_history_v1",
+    query_texts=["solución validada patrón exitoso"],
+    n_results=5
+)
+
+# Filtrar por alta confianza
+mcp_chroma_get_documents_with_where_filter(
+    collection_name="chat_history_v1",
+    where='{"confidence_score": {"$gt": 0.8}, "status": "analyzed"}',
+    limit=10
+)
+```
+
+### 2. Revisar Contexto Completo
+
+Antes de promover, revisar:
+- Resumen del prompt y respuesta
+- Diferencias de código (diffs)
+- Secuencia de herramientas utilizadas
+- Evidencia de validación vinculada
+- Entidades involucradas
+
+### 3. Formular el Aprendizaje
+
+Estructurar el aprendizaje con:
+- **description**: Explicación clara del patrón o solución
+- **pattern**: Resumen conciso o palabra clave
+- **tags**: Categorías para búsqueda (ej: "symfony,repository,testing")
+- **example_code_reference**: Referencia a código de ejemplo
+- **confidence**: Puntuación de confianza (0.0-1.0)
+- **validation_evidence_id**: ID de evidencia de validación si existe
+- **validation_score**: Puntuación de la evidencia de validación
+
+### 4. Promover el Aprendizaje
+
+Usar herramientas MCP para promover (cuando estén disponibles):
+- `mcp_chroma_promote_learning`: Promover directamente
+- `mcp_chroma_review_and_promote`: Revisión interactiva
+
+### 5. Actualizar Estado
+
+Después de promover exitosamente:
+- Actualizar estado de la entrada en `chat_history_v1` a `promoted_to_learning`
+- Vincular el `learning_id` con la entrada original
+
+## Uso de Derived Learnings en RAG
+
+### Búsqueda Priorizada
+Los Derived Learnings deben priorizarse en búsquedas RAG:
+
+```python
+# Buscar primero en derived learnings (patrones validados)
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=["patrón solución validada"],
+    n_results=3
+)
+
+# Luego buscar en codebase (código raw)
+mcp_chroma_query_documents(
+    collection_name="codebase_v1",
+    query_texts=["implementación código"],
+    n_results=5
+)
+```
+
+### Combinación Inteligente
+- Priorizar resultados de `derived_learnings_v1` sobre `codebase_v1`
+- Combinar resultados de ambas colecciones para contexto completo
+- Usar metadata de `derived_learnings_v1` para filtrar y priorizar
+
+## Mantenimiento de Derived Learnings
+
+### Revisión Periódica
+- Revisar aprendizajes periódicamente para relevancia y precisión
+- Actualizar aprendizajes si el código o la mejor práctica cambia
+- Retirar aprendizajes que ya no son aplicables o han sido superados
+
+### Versionado
+- Mantener historial de cambios en aprendizajes importantes
+- Documentar cuándo y por qué se actualizó un aprendizaje
+- Vincular versiones anteriores con nuevas versiones
+
+## Integración con Validation Evidence
+
+### Vincular Evidencia
+Cuando se promueve un aprendizaje basado en evidencia de validación:
+- Vincular `validation_evidence_id` con el aprendizaje
+- Incluir `validation_score` en el metadata
+- Referenciar transiciones de tests específicas
+
+### Validación Requerida
+Para aprendizajes críticos:
+- Requerir evidencia de validación antes de promover
+- Establecer umbral mínimo de `validation_score` (ej: 0.7)
+- Documentar la evidencia que respalda el aprendizaje
+
+## Ejemplo de Promoción
+
+### Identificar Candidato
+```python
+# Buscar entrada de chat con alta confianza
+candidate = mcp_chroma_get_documents_with_where_filter(
+    collection_name="chat_history_v1",
+    where='{"confidence_score": {"$gt": 0.9}, "modification_type": "bugfix"}',
+    limit=1
+)
+```
+
+### Revisar Contexto
+```python
+# Obtener detalles completos
+chat_entry = mcp_chroma_get_documents_by_ids(
+    collection_name="chat_history_v1",
+    ids=[candidate[0]["id"]]
+)
+
+# Revisar evidencia de validación vinculada
+if "validation_evidence_id" in chat_entry[0]["metadata"]:
+    validation = mcp_chroma_get_documents_by_ids(
+        collection_name="validation_evidence_v1",
+        ids=[chat_entry[0]["metadata"]["validation_evidence_id"]]
+    )
+```
+
+### Promover
+```python
+# Promover el aprendizaje
+mcp_chroma_add_document_with_id_and_metadata(
+    collection_name="derived_learnings_v1",
+    document="Siempre verificar null/undefined antes de acceder a propiedades de objetos en JavaScript. Usar optional chaining (?.) o verificaciones explícitas.",
+    id=f"learning_null_safety_{timestamp}",
+    metadata='{"pattern": "null safety check", "tags": "javascript,error-handling,null-safety", "confidence": 0.95, "validation_evidence_id": "evidence-123", "validation_score": 0.9, "source_chat_id": "chat-456"}'
+)
+
+# Actualizar estado de la entrada original
+mcp_chroma_update_document_metadata(
+    collection_name="chat_history_v1",
+    id="chat-456",
+    metadata='{"status": "promoted_to_learning", "learning_id": "learning_null_safety_123"}'
+)
+```

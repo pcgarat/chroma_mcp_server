@@ -1,0 +1,144 @@
+---
+alwaysApply: false
+---
+
+# Regla: Debug Assist - Asistencia Proactiva en Debugging
+
+**Descripción:** Guía para buscar proactivamente soluciones validadas cuando el usuario reporta errores, fallos de tests, o problemas de código.
+
+## Cuándo Activar Esta Regla
+
+Esta regla se activa cuando:
+- El usuario pega un mensaje de error o stacktrace
+- El usuario reporta que un test está fallando
+- El usuario menciona un problema o bug
+- El usuario pregunta "¿por qué falla...?" o "¿cómo arreglar...?"
+
+## Workflow de Debugging Proactivo
+
+### 1. Análisis Inicial del Error
+
+Cuando se detecta un error o problema:
+- Extraer el tipo de error (TypeError, ValueError, etc.)
+- Extraer el mensaje de error clave
+- Identificar archivos o módulos mencionados
+- Identificar funciones o líneas de código relevantes
+
+### 2. Búsqueda Proactiva en Múltiples Colecciones
+
+**Paso 1: Buscar en Derived Learnings (Prioridad Alta)**
+```python
+# Buscar soluciones validadas primero
+mcp_chroma_query_documents(
+    collection_name="derived_learnings_v1",
+    query_texts=[f"error {error_type} {error_message_keywords}"],
+    n_results=3
+)
+```
+
+**Paso 2: Buscar en Chat History (Contexto de Soluciones)**
+```python
+# Buscar discusiones previas sobre este error
+mcp_chroma_query_documents(
+    collection_name="chat_history_v1",
+    query_texts=[f"error {error_type} {error_message_keywords} fix solution"],
+    n_results=5
+)
+```
+
+**Paso 3: Buscar en Test Results (Transiciones de Tests)**
+```python
+# Buscar tests que fallaron y fueron corregidos
+mcp_chroma_query_documents(
+    collection_name="test_results_v1",
+    query_texts=[f"test failure {error_message_keywords}"],
+    n_results=5
+)
+```
+
+**Paso 4: Buscar en Validation Evidence (Evidencia de Fixes)**
+```python
+# Buscar evidencia de validación de fixes similares
+mcp_chroma_query_documents(
+    collection_name="validation_evidence_v1",
+    query_texts=[f"error resolution {error_type}"],
+    n_results=3
+)
+```
+
+**Paso 5: Buscar en Codebase (Código Relacionado)**
+```python
+# Buscar código relacionado con el error
+mcp_chroma_query_documents(
+    collection_name="codebase_v1",
+    query_texts=[f"{file_path} {function_name} {error_type}"],
+    n_results=5
+)
+```
+
+### 3. Priorización de Resultados
+
+Priorizar resultados en este orden:
+1. **Derived Learnings** con `validation_evidence_id` (soluciones validadas)
+2. **Chat History** con alta `confidence_score` (>0.8) y evidencia de validación
+3. **Test Results** con transiciones de fallido a pasado
+4. **Validation Evidence** con alta puntuación
+5. **Codebase** con código relacionado
+
+### 4. Presentación de Soluciones
+
+Al presentar soluciones encontradas:
+- **Mencionar explícitamente** si la solución está validada (derived learning o validation evidence)
+- **Incluir contexto** de cómo se resolvió anteriormente (chat history, test transitions)
+- **Mostrar código** de ejemplo si está disponible
+- **Priorizar soluciones** con evidencia de validación sobre soluciones teóricas
+
+### 5. Sugerencia de Validación
+
+Si se encuentra una solución pero no tiene evidencia de validación:
+- Sugerir crear un test para validar la solución
+- Sugerir registrar la evidencia de validación después de verificar el fix
+- Sugerir promover a derived learnings si la solución es exitosa
+
+## Ejemplo de Uso
+
+### Escenario: Error de Test
+```
+Usuario: "El test UserServiceTest::testCreateUser está fallando con 'TypeError: Cannot read property value of undefined'"
+```
+
+**Acción del AI:**
+1. Buscar en `derived_learnings_v1`: "TypeError undefined property null safety"
+2. Buscar en `chat_history_v1`: "testCreateUser TypeError fix"
+3. Buscar en `test_results_v1`: "testCreateUser failure"
+4. Buscar en `validation_evidence_v1`: "TypeError resolution"
+5. Buscar en `codebase_v1`: "UserService createUser"
+
+**Respuesta:**
+```
+🔍 Contexto de Memoria: Encontré una solución validada para este tipo de error.
+
+En `derived_learnings_v1` hay un patrón validado: "Siempre verificar null/undefined antes de acceder a propiedades de objetos". Esta solución fue validada mediante una transición de test (test fallido → test pasado) con un validation_score de 0.9.
+
+Además, en `chat_history_v1` encontré una discusión previa donde se resolvió un error similar en UserService hace 2 semanas. El fix involucró añadir verificaciones null antes de acceder a propiedades.
+
+Solución recomendada (validada):
+- Añadir verificaciones null/undefined antes de acceder a propiedades
+- Usar optional chaining (?.) o verificaciones explícitas
+- Ver código de ejemplo en: src/UserService.php:42-45
+```
+
+## Integración con Enhanced Context Capture
+
+Cuando se resuelve un error:
+- Registrar en `chat_history_v1` con metadata de error resuelto
+- Vincular con `validation_evidence_v1` si hay evidencia de validación
+- Promover a `derived_learnings_v1` si la solución es exitosa y reutilizable
+
+## Mejores Prácticas
+
+1. **Siempre buscar primero en Derived Learnings** - Priorizar soluciones validadas
+2. **Incluir contexto de validación** - Mencionar si la solución tiene evidencia de validación
+3. **Buscar en múltiples colecciones** - No limitarse a una sola fuente
+4. **Priorizar por evidencia** - Soluciones con validation_evidence_id tienen mayor prioridad
+5. **Sugerir validación** - Si no hay evidencia, sugerir crear tests o registrar evidencia

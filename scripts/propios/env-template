@@ -1,0 +1,41 @@
+# Configuración de ChromaDB
+# Copia este archivo a .env y ajusta los valores según tu entorno
+
+# Tipo de cliente ChromaDB
+CHROMA_CLIENT_TYPE=http
+
+# Configuración del servidor ChromaDB
+CHROMA_HOST=localhost
+CHROMA_PORT=8000
+CHROMA_SSL=false
+CHROMA_API_KEY=your-chroma-api-key-here
+CHROMA_TENANT=your-tenant-name
+
+# Función de embedding
+CHROMA_EMBEDDING_FUNCTION=openai
+OPENAI_API_KEY=your-openai-api-key-here
+
+# Modelo de embedding de OpenAI (opcional, por defecto: text-embedding-3-small)
+# Opciones: text-embedding-ada-002, text-embedding-3-small, text-embedding-3-large
+CHROMA_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+
+# Dimensiones del embedding de OpenAI (opcional, por defecto según modelo)
+# Para text-embedding-3-small: 1536 (por defecto)
+# Para text-embedding-3-large: 1024 (por defecto)
+# Para text-embedding-ada-002: 1536 (por defecto)
+CHROMA_OPENAI_EMBEDDING_DIMENSIONS=1536
+
+# Directorio de logs
+CHROMA_LOG_DIR=/home/pacogarat/projects/symfony/memory/logs
+
+# Niveles de logging
+LOG_LEVEL=INFO
+MCP_LOG_LEVEL=INFO
+MCP_SERVER_LOG_LEVEL=INFO
+
+# Configuración adicional
+CHROMA_DISTANCE_METRIC=cosine
+CHROMA_COLLECTION_METADATA='{"hnsw:space": "cosine"}'
+CHROMA_ISOLATION_LEVEL=read_committed
+CHROMA_ALLOW_RESET=true
+

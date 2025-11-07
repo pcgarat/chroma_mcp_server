@@ -7,10 +7,25 @@ import platform
 from typing import Optional, Union, Any, Dict, Callable
 from dataclasses import dataclass
 
+# Migrate deprecated PYTORCH_CUDA_ALLOC_CONF to PYTORCH_ALLOC_CONF
+# This prevents warnings from PyTorch dependencies (e.g., sentence-transformers)
+# Do this early, before any imports that might use PyTorch
+if "PYTORCH_CUDA_ALLOC_CONF" in os.environ and "PYTORCH_ALLOC_CONF" not in os.environ:
+    os.environ["PYTORCH_ALLOC_CONF"] = os.environ["PYTORCH_CUDA_ALLOC_CONF"]
+    # Optionally remove the deprecated variable to avoid confusion
+    # os.environ.pop("PYTORCH_CUDA_ALLOC_CONF", None)
+
 import chromadb
 from chromadb.config import Settings
 from chromadb import EmbeddingFunction, Documents, Embeddings
 from chromadb.utils import embedding_functions as ef
+
+# For database verification/creation
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
 
 # --- Dependency Availability Checks ---
 
@@ -116,11 +131,14 @@ def get_api_key(service_name: str) -> Optional[str]:
     """Retrieve API key for a service from environment variables."""
     env_var_name = f"{service_name.upper()}_API_KEY"
     key = os.getenv(env_var_name)
-    logger = get_logger("utils.chroma_client")
-    if key:
-        logger.debug(f"Found API key for {service_name} in env var {env_var_name}")
-    else:
-        logger.warning(f"API key for {service_name} not found in env var {env_var_name}")  # Changed to warning
+    # Only log if logger is configured (avoid warnings during initialization)
+    from . import _main_logger_instance
+    if _main_logger_instance is not None:
+        logger = get_logger("utils.chroma_client")
+        if key:
+            logger.debug(f"Found API key for {service_name} in env var {env_var_name}")
+        else:
+            logger.warning(f"API key for {service_name} not found in env var {env_var_name}")
     return key
 
 
@@ -128,9 +146,49 @@ def get_api_key(service_name: str) -> Optional[str]:
 def get_ollama_base_url() -> str:
     """Retrieve Ollama base URL from environment or use default."""
     url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")  # Default to local
-    logger = get_logger("utils.chroma_client")
-    logger.debug(f"Using Ollama base URL: {url}")
+    # Only log if logger is configured (avoid warnings during initialization)
+    from . import _main_logger_instance
+    if _main_logger_instance is not None:
+        logger = get_logger("utils.chroma_client")
+        logger.debug(f"Using Ollama base URL: {url}")
     return url
+
+
+# Helper for OpenAI embedding model name
+def get_openai_embedding_model() -> str:
+    """Retrieve OpenAI embedding model name from environment or use default."""
+    model = os.getenv("CHROMA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")  # Default to text-embedding-3-small
+    # Only log if logger is configured (avoid warnings during initialization)
+    from . import _main_logger_instance
+    if _main_logger_instance is not None:
+        logger = get_logger("utils.chroma_client")
+        logger.debug(f"Using OpenAI embedding model: {model}")
+    return model
+
+
+# Helper for OpenAI embedding dimensions
+def get_openai_embedding_dimensions() -> Optional[int]:
+    """Retrieve OpenAI embedding dimensions from environment or use model-specific defaults."""
+    dimensions_env = os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS")
+    if dimensions_env:
+        try:
+            return int(dimensions_env)
+        except ValueError:
+            # Only log if logger is configured (avoid warnings during initialization)
+            from . import _main_logger_instance
+            if _main_logger_instance is not None:
+                logger = get_logger("utils.chroma_client")
+                logger.warning(f"Invalid CHROMA_OPENAI_EMBEDDING_DIMENSIONS value: {dimensions_env}, using model default")
+    
+    # Model-specific defaults for text-embedding-3-* models
+    model = get_openai_embedding_model()
+    if model == "text-embedding-3-small":
+        return 1536  # Default dimension for text-embedding-3-small
+    elif model == "text-embedding-3-large":
+        return 1024  # Use smaller dimension for efficiency
+    
+    # For other models (e.g., text-embedding-ada-002), return None to use default
+    return None
 
 
 # Updated Registry
@@ -161,7 +219,17 @@ KNOWN_EMBEDDING_FUNCTIONS: Dict[str, Callable[[], EmbeddingFunction]] = {
         else {}
     ),
     # --- API-based Options ---
-    **({"openai": lambda: ef.OpenAIEmbeddingFunction(api_key=get_api_key("openai"))} if OPENAI_AVAILABLE else {}),
+    **(
+        {
+            "openai": lambda: ef.OpenAIEmbeddingFunction(
+                api_key=get_api_key("openai"),
+                model_name=get_openai_embedding_model(),
+                dimensions=get_openai_embedding_dimensions(),
+            )
+        }
+        if OPENAI_AVAILABLE
+        else {}
+    ),
     **({"cohere": lambda: ef.CohereEmbeddingFunction(api_key=get_api_key("cohere"))} if COHERE_AVAILABLE else {}),
     **(
         {
@@ -288,7 +356,13 @@ def get_embedding_function(name: str) -> EmbeddingFunction:
         # Bedrock relies on implicit AWS credential chain (no specific check here)
 
         instance = instantiator()
-        logger.info(f"Successfully instantiated embedding function: '{normalized_name}'")
+        # Log configuration details for OpenAI
+        if normalized_name == "openai":
+            model_name = get_openai_embedding_model()
+            dimensions = get_openai_embedding_dimensions()
+            logger.info(f"Successfully instantiated OpenAI embedding function - Model: {model_name}, Dimensions: {dimensions}")
+        else:
+            logger.info(f"Successfully instantiated embedding function: '{normalized_name}'")
         return instance
     except ImportError as e:
         logger.error(f"ImportError instantiating '{normalized_name}': {e}. Dependency likely missing.", exc_info=True)
@@ -338,11 +412,28 @@ def get_chroma_client(
         )
 
     # Create ChromaDB settings with telemetry disabled
-    chroma_settings = Settings(
-        # Opt out of telemetry (see https://docs.trychroma.com/docs/overview/telemetry)
-        anonymized_telemetry=False,
-        # Potentially add other settings here if needed, e.g., from config
-    )
+    # EXTENSION: Leer configuración adicional desde variables de entorno
+    # Permite usar CHROMA_ISOLATION_LEVEL y CHROMA_ALLOW_RESET sin modificar la firma
+    settings_kwargs = {
+        "anonymized_telemetry": False,  # Opt out of telemetry
+    }
+    
+    # EXTENSION: Configurar isolation level si está definido
+    # NOTA: isolation_level no es un parámetro válido de Settings en ChromaDB
+    # Se lee pero no se pasa a Settings
+    isolation_level = os.getenv("CHROMA_ISOLATION_LEVEL")
+    if isolation_level:
+        logger.debug(f"CHROMA_ISOLATION_LEVEL={isolation_level} (not used in Settings, ChromaDB doesn't support this parameter)")
+    
+    # EXTENSION: Configurar allow_reset si está definido
+    # NOTA: allow_reset tampoco es un parámetro válido de Settings en ChromaDB
+    # Se lee pero no se pasa a Settings
+    allow_reset_str = os.getenv("CHROMA_ALLOW_RESET", "true")
+    allow_reset = allow_reset_str.lower() in ["true", "1", "yes"]
+    logger.debug(f"CHROMA_ALLOW_RESET={allow_reset} (not used in Settings, ChromaDB doesn't support this parameter)")
+    
+    # Crear Settings con solo los parámetros básicos soportados por ChromaDB
+    chroma_settings = Settings(anonymized_telemetry=False)
 
     # Validate configuration
     if config.client_type == "persistent" and not config.data_dir:
@@ -356,6 +447,11 @@ def get_chroma_client(
             _chroma_client = chromadb.PersistentClient(path=config.data_dir, settings=chroma_settings)
             logger.info(f"Persistent client initialized (Path: {config.data_dir})")
         elif config.client_type == "http":
+            # Build headers if api_key is provided
+            headers = None
+            if config.api_key:
+                headers = {"Authorization": f"Bearer {config.api_key}"}
+            
             _chroma_client = chromadb.HttpClient(
                 host=config.host,
                 port=config.port,
@@ -363,9 +459,9 @@ def get_chroma_client(
                 tenant=config.tenant,
                 database=config.database,
                 settings=chroma_settings,
-                # Note: API key might be handled separately or via headers
+                headers=headers,
             )
-            logger.info(f"HTTP client initialized (Host: {config.host}, Port: {config.port}, SSL: {config.ssl})")
+            logger.info(f"HTTP client initialized (Host: {config.host}, Port: {config.port}, SSL: {config.ssl}, Auth: {'Yes' if config.api_key else 'No'})")
         else:  # ephemeral
             _chroma_client = chromadb.EphemeralClient(settings=chroma_settings)
             logger.info("Ephemeral client initialized")
