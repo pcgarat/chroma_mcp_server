@@ -113,32 +113,10 @@ def get_chroma_env_vars(mcp_config: Dict[str, Any]) -> Dict[str, str]:
         print("❌ Error: No se encontraron variables de entorno en la configuración de chroma", file=sys.stderr)
         sys.exit(1)
     
-    # Variables relevantes para el hook
-    relevant_vars = {
-        "CHROMA_TENANT": env_vars.get("CHROMA_TENANT"),
-        "CHROMA_DATABASE": env_vars.get("CHROMA_DATABASE"),
-        "CHROMA_OPENAI_EMBEDDING_MODEL": env_vars.get("CHROMA_OPENAI_EMBEDDING_MODEL"),
-        "CHROMA_OPENAI_EMBEDDING_DIMENSIONS": env_vars.get("CHROMA_OPENAI_EMBEDDING_DIMENSIONS"),
-        "CHROMA_EMBEDDING_FUNCTION": env_vars.get("CHROMA_EMBEDDING_FUNCTION"),
-        "CHROMA_CLIENT_TYPE": env_vars.get("CHROMA_CLIENT_TYPE"),
-        "CHROMA_HOST": env_vars.get("CHROMA_HOST"),
-        "CHROMA_PORT": env_vars.get("CHROMA_PORT"),
-        "CHROMA_SSL": env_vars.get("CHROMA_SSL"),
-        "CHROMA_API_KEY": env_vars.get("CHROMA_API_KEY"),
-        "OPENAI_API_KEY": env_vars.get("OPENAI_API_KEY"),
-        "CHROMA_DISTANCE_METRIC": env_vars.get("CHROMA_DISTANCE_METRIC"),
-        "CHROMA_COLLECTION_METADATA": env_vars.get("CHROMA_COLLECTION_METADATA"),
-        "CHROMA_ISOLATION_LEVEL": env_vars.get("CHROMA_ISOLATION_LEVEL"),
-        "CHROMA_ALLOW_RESET": env_vars.get("CHROMA_ALLOW_RESET"),
-        "LOG_LEVEL": env_vars.get("LOG_LEVEL"),
-        "MCP_LOG_LEVEL": env_vars.get("MCP_LOG_LEVEL"),
-        "MCP_SERVER_LOG_LEVEL": env_vars.get("MCP_SERVER_LOG_LEVEL"),
-        "CHROMA_LOG_DIR": env_vars.get("CHROMA_LOG_DIR"),
-        "PYTHONPATH": env_vars.get("PYTHONPATH"),
-    }
-    
-    # Filtrar None values
-    return {k: v for k, v in relevant_vars.items() if v is not None}
+    # Retornar TODAS las variables de entorno del mcp.json
+    # Esto asegura que todas las variables necesarias estén disponibles en el hook
+    # Las variables del mcp.json tienen prioridad sobre las del .env
+    return {k: v for k, v in env_vars.items() if v is not None}
 
 def get_chroma_mcp_server_root() -> Path:
     """
@@ -213,13 +191,19 @@ if [ -z "$ABSOLUTE_FILES" ]; then
   exit 0
 fi
 
-# Run the indexer using hatch from chroma_mcp_server
-# Cambiar al directorio de chroma_mcp_server para usar hatch
-cd "{chroma_mcp_server_path}" || exit 1
+# Run the indexer using chroma-client.sh from scripts/propios
+# Usar el script chroma-client.sh que carga automáticamente las variables de entorno
+CHROMA_CLIENT_SCRIPT="{chroma_mcp_server_path}/scripts/propios/chroma-client.sh"
 
-# Run the client with appropriate verbosity and repo-root
-# Pass absolute file paths and specify repo-root as the project root
-hatch run python -m chroma_mcp_client.cli -vv index --repo-root "$PROJECT_ROOT" $ABSOLUTE_FILES
+if [ ! -f "$CHROMA_CLIENT_SCRIPT" ]; then
+  echo "Error: No se encontró el script $CHROMA_CLIENT_SCRIPT"
+  exit 1
+fi
+
+# Ejecutar el cliente con las variables de entorno ya configuradas
+# Las variables de entorno del mcp.json tienen prioridad sobre las del .env
+# El script chroma-client.sh usará las variables ya exportadas
+"$CHROMA_CLIENT_SCRIPT" -vv index --repo-root "$PROJECT_ROOT" $ABSOLUTE_FILES
 
 if [ $? -ne 0 ]; then
   echo "Error running chroma-mcp-client indexer!"
