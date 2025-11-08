@@ -8,8 +8,9 @@ del proyecto destino con la configuración del servidor ChromaDB.
 import os
 import sys
 import json
+import argparse
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Configurar codificación UTF-8 para stdin/stdout/stderr
 if sys.version_info >= (3, 7):
@@ -86,12 +87,28 @@ def load_env_file(env_file: Path) -> Dict[str, str]:
     
     return env_vars
 
-def get_project_path() -> Path:
-    """Pregunta al usuario la ruta del proyecto destino."""
+def get_project_path(project_path_arg: Optional[str] = None) -> Path:
+    """Obtiene la ruta del proyecto destino, ya sea desde argumento o preguntando al usuario."""
+    if project_path_arg:
+        project_path = os.path.expanduser(project_path_arg)
+        project_path = os.path.expandvars(project_path)
+        project_path = Path(project_path).resolve()
+        
+        if not project_path.exists():
+            print(f"❌ Error: La ruta {project_path} no existe.", file=sys.stderr)
+            sys.exit(1)
+        
+        if not project_path.is_dir():
+            print(f"❌ Error: {project_path} no es un directorio.", file=sys.stderr)
+            sys.exit(1)
+        
+        return project_path
+    
+    # Si no se pasó argumento, preguntar interactivamente
     while True:
         try:
             project_path = input("📁 Ingresa la ruta del proyecto donde quieres añadir el MCP server de ChromaDB: ").strip()
-        except (UnicodeDecodeError, UnicodeError) as e:
+        except UnicodeError as e:
             print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
             print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 setup-mcp-config.py", file=sys.stderr)
             sys.exit(1)
@@ -117,11 +134,15 @@ def get_project_path() -> Path:
         
         return project_path
 
-def get_tenant() -> str:
-    """Pregunta al usuario el tenant."""
+def get_tenant(tenant_arg: Optional[str] = None) -> str:
+    """Obtiene el tenant, ya sea desde argumento o preguntando al usuario."""
+    if tenant_arg:
+        return tenant_arg if tenant_arg else "default_tenant"
+    
+    # Si no se pasó argumento, preguntar interactivamente
     try:
         tenant = input("🏢 Ingresa el CHROMA_TENANT (o presiona Enter para usar 'default_tenant'): ").strip()
-    except (UnicodeDecodeError, UnicodeError) as e:
+    except UnicodeError as e:
         print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
         print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 setup-mcp-config.py", file=sys.stderr)
         sys.exit(1)
@@ -205,6 +226,23 @@ def build_chroma_config(env_vars: Dict[str, str], tenant: str, chroma_mcp_server
 
 def main():
     """Función principal."""
+    parser = argparse.ArgumentParser(
+        description="Configura el servidor MCP de ChromaDB en un proyecto.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        help="Ruta del proyecto donde configurar el MCP server (si no se proporciona, se pregunta interactivamente)"
+    )
+    parser.add_argument(
+        "--tenant",
+        type=str,
+        help="CHROMA_TENANT a usar (si no se proporciona, se pregunta interactivamente o se usa 'default_tenant')"
+    )
+    
+    args = parser.parse_args()
+    
     print("🔧 Configurador de MCP Server para ChromaDB\n")
     
     # Verificar que existe el Makefile (para detectar la raíz de chroma_mcp_server)
@@ -217,12 +255,12 @@ def main():
     env_vars = load_env_file(ENV_FILE)
     print(f"✅ {len(env_vars)} variables cargadas\n")
     
-    # Preguntar la ruta del proyecto destino
-    project_path = get_project_path()
+    # Obtener la ruta del proyecto destino
+    project_path = get_project_path(args.project_path)
     print(f"✅ Proyecto destino: {project_path}\n")
     
-    # Preguntar tenant
-    tenant = get_tenant()
+    # Obtener tenant
+    tenant = get_tenant(args.tenant)
     database = env_vars.get("CHROMA_DATABASE", "default_database")
     print(f"✅ CHROMA_TENANT: {tenant}")
     print(f"✅ CHROMA_DATABASE: {database} (del .env)\n")

@@ -83,7 +83,11 @@ def _do_log_chat(input_model: LogChatInput) -> str:
     from chroma_mcp_client.auto_log_chat_impl import log_chat_to_chroma
 
     # Get client and embedding function
-    client, _ = get_client_and_ef()
+    # Read tenant and database from environment to ensure correct cache key
+    # This allows multiple concurrent projects with different tenants/databases
+    tenant = os.getenv("CHROMA_TENANT")
+    database = os.getenv("CHROMA_DATABASE")
+    client, _ = get_client_and_ef(tenant=tenant, database=database)
 
     # Extract parameters from the input model
     prompt_summary = input_model.prompt_summary

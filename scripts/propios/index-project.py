@@ -8,10 +8,11 @@ y ejecuta la indexación excluyendo archivos según .gitignore y .git/info/exclu
 import os
 import sys
 import json
+import argparse
 import subprocess
 import fnmatch
 from pathlib import Path
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Optional
 
 # Configurar codificación UTF-8 para stdin/stdout/stderr
 if sys.version_info >= (3, 7):
@@ -48,12 +49,28 @@ def get_chroma_mcp_server_root() -> Path:
 # Obtener la raíz del proyecto chroma_mcp_server dinámicamente
 CHROMA_MCP_SERVER_ROOT = get_chroma_mcp_server_root()
 
-def get_project_path() -> Path:
-    """Pregunta al usuario la ruta del proyecto destino."""
+def get_project_path(project_path_arg: Optional[str] = None) -> Path:
+    """Obtiene la ruta del proyecto destino, ya sea desde argumento o preguntando al usuario."""
+    if project_path_arg:
+        project_path = os.path.expanduser(project_path_arg)
+        project_path = os.path.expandvars(project_path)
+        project_path = Path(project_path).resolve()
+        
+        if not project_path.exists():
+            print(f"❌ Error: La ruta {project_path} no existe.", file=sys.stderr)
+            sys.exit(1)
+        
+        if not project_path.is_dir():
+            print(f"❌ Error: {project_path} no es un directorio.", file=sys.stderr)
+            sys.exit(1)
+        
+        return project_path
+    
+    # Si no se pasó argumento, preguntar interactivamente
     while True:
         try:
             project_path = input("📁 Ingresa la ruta del proyecto que quieres indexar: ").strip()
-        except (UnicodeDecodeError, UnicodeError) as e:
+        except UnicodeError as e:
             print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
             print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 index-project.py", file=sys.stderr)
             sys.exit(1)
@@ -207,13 +224,47 @@ def get_all_files_in_project(project_root: Path) -> List[Path]:
         print(f"   stderr: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
-def run_indexing(project_root: Path, tenant: str) -> int:
+def get_chroma_env_vars_from_mcp_json(mcp_config: Dict[str, Any]) -> Dict[str, str]:
+    """Extrae todas las variables de entorno relevantes del mcp.json."""
+    chroma_config = mcp_config.get("mcpServers", {}).get("chroma", {})
+    env_vars = chroma_config.get("env", {})
+    
+    # Variables relevantes para conectar a ChromaDB
+    relevant_vars = {
+        "CHROMA_CLIENT_TYPE": env_vars.get("CHROMA_CLIENT_TYPE"),
+        "CHROMA_HOST": env_vars.get("CHROMA_HOST"),
+        "CHROMA_PORT": env_vars.get("CHROMA_PORT"),
+        "CHROMA_SSL": env_vars.get("CHROMA_SSL"),
+        "CHROMA_API_KEY": env_vars.get("CHROMA_API_KEY"),
+        "CHROMA_TENANT": env_vars.get("CHROMA_TENANT"),
+        "CHROMA_DATABASE": env_vars.get("CHROMA_DATABASE"),
+        "CHROMA_DATA_DIR": env_vars.get("CHROMA_DATA_DIR"),
+        "CHROMA_EMBEDDING_FUNCTION": env_vars.get("CHROMA_EMBEDDING_FUNCTION"),
+        "OPENAI_API_KEY": env_vars.get("OPENAI_API_KEY"),
+    }
+    
+    return {k: v for k, v in relevant_vars.items() if v is not None}
+
+def run_indexing(project_root: Path, mcp_config: Dict[str, Any]) -> int:
     """
     Ejecuta el script de indexación usando chroma-mcp-client.
-    Establece CHROMA_TENANT antes de ejecutar e ignora el valor del .env.
+    Establece todas las variables de entorno del mcp.json antes de ejecutar.
     """
+    # Extraer todas las variables de entorno del mcp.json
+    env_vars = get_chroma_env_vars_from_mcp_json(mcp_config)
+    
+    # Mostrar las variables que se van a usar (sin mostrar valores sensibles)
+    print("📋 Variables de entorno extraídas del mcp.json del proyecto:")
+    sensitive_keys = ["CHROMA_API_KEY", "OPENAI_API_KEY"]
+    for key, value in env_vars.items():
+        if key in sensitive_keys:
+            print(f"   - {key}: {'*' * min(len(str(value)), 20)}...")
+        else:
+            print(f"   - {key}: {value}")
+    print()
+    
     # Obtener todos los archivos del proyecto (git ls-files ya respeta .gitignore)
-    print(f"📋 Obteniendo lista de archivos del proyecto...")
+    print("📋 Obteniendo lista de archivos del proyecto...")
     all_files_before_exclude = get_all_files_in_project(project_root)
     print(f"   Encontrados {len(all_files_before_exclude)} archivos rastreados por git")
     
@@ -233,18 +284,22 @@ def run_indexing(project_root: Path, tenant: str) -> int:
         print(f"❌ Error: No se encontró el script {client_script}", file=sys.stderr)
         sys.exit(1)
     
-    # Establecer CHROMA_TENANT en el entorno (sobrescribe cualquier valor del .env)
+    # Establecer TODAS las variables de entorno del mcp.json (sobrescribe cualquier valor del .env)
+    # Estas variables tienen prioridad sobre las del .env de chroma_mcp_server
     env = os.environ.copy()
-    env['CHROMA_TENANT'] = tenant
+    for key, value in env_vars.items():
+        env[key] = value
+        print(f"🔧 Establecida variable de entorno: {key} (desde mcp.json del proyecto)")
     
     # Si hay archivos excluidos por .git/info/exclude, necesitamos indexar archivo por archivo
     # en lugar de usar --all, ya que --all no respeta .git/info/exclude
     has_exclusions = exclude_patterns and len(all_files) < len(all_files_before_exclude)
+    tenant = env_vars.get("CHROMA_TENANT", "default_tenant")
     if has_exclusions:
         print(f"\n🚀 Iniciando indexación con CHROMA_TENANT={tenant}...")
         print(f"   Proyecto: {project_root}")
         print(f"   Archivos a indexar: {len(all_files)}")
-        print(f"   (Usando indexación archivo por archivo debido a exclusiones de .git/info/exclude)")
+        print("   (Usando indexación archivo por archivo debido a exclusiones de .git/info/exclude)")
         
         # Indexar archivo por archivo
         indexed_count = 0
@@ -302,23 +357,37 @@ def run_indexing(project_root: Path, tenant: str) -> int:
 
 def main():
     """Función principal."""
-    print("🔍 Indexador de Proyecto para ChromaDB\n")
+    parser = argparse.ArgumentParser(
+        description="Indexa todos los documentos de un proyecto en ChromaDB.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        help="Ruta del proyecto a indexar (si no se proporciona, se pregunta interactivamente)"
+    )
     
-    # Preguntar la ruta del proyecto
-    project_path = get_project_path()
-    print(f"✅ Proyecto: {project_path}\n")
+    args = parser.parse_args()
+    
+    print("🔍 Indexador de Proyecto para ChromaDB")
+    print()
+    
+    # Obtener la ruta del proyecto
+    project_path = get_project_path(args.project_path)
+    print(f"✅ Proyecto: {project_path}")
+    print()
     
     # Leer mcp.json
     mcp_json_path = project_path / ".cursor" / "mcp.json"
     print(f"📖 Leyendo configuración desde {mcp_json_path}...")
     mcp_config = read_mcp_json(mcp_json_path)
     
-    # Extraer CHROMA_TENANT
+    # Extraer CHROMA_TENANT para mostrar
     tenant = get_chroma_tenant_from_mcp_json(mcp_config)
     print(f"✅ CHROMA_TENANT: {tenant}\n")
     
-    # Ejecutar indexación
-    exit_code = run_indexing(project_path, tenant)
+    # Ejecutar indexación (pasa todo el mcp_config para extraer todas las variables)
+    exit_code = run_indexing(project_path, mcp_config)
     
     return exit_code
 

@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 """
 Script para borrar todas las colecciones de ChromaDB y recrearlas desde cero.
+Lee la configuración del .cursor/mcp.json del proyecto del usuario.
 """
 import os
 import sys
+import json
+import argparse
 from pathlib import Path
+from typing import Dict, Any, Optional
+
+# Configurar codificación UTF-8 para stdin/stdout/stderr
+if sys.version_info >= (3, 7):
+    try:
+        sys.stdin.reconfigure(encoding='utf-8')
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except (AttributeError, ValueError):
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+else:
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 def get_chroma_mcp_server_root() -> Path:
     """
@@ -36,65 +51,152 @@ def get_chroma_mcp_server_root() -> Path:
 
 # Obtener la raíz del proyecto chroma_mcp_server dinámicamente
 CHROMA_MCP_SERVER_ROOT = get_chroma_mcp_server_root()
-ENV_FILE = CHROMA_MCP_SERVER_ROOT / ".env"
 
-# Cargar variables de entorno desde el archivo .env si existe
-if ENV_FILE.exists():
-    try:
-        # Intentar usar python-dotenv si está disponible
+def get_project_path(project_path_arg: Optional[str] = None) -> Path:
+    """Obtiene la ruta del proyecto destino, ya sea desde argumento o preguntando al usuario."""
+    if project_path_arg:
+        project_path = os.path.expanduser(project_path_arg)
+        project_path = os.path.expandvars(project_path)
+        project_path = Path(project_path).resolve()
+        
+        if not project_path.exists():
+            print(f"❌ Error: La ruta {project_path} no existe.", file=sys.stderr)
+            sys.exit(1)
+        
+        if not project_path.is_dir():
+            print(f"❌ Error: {project_path} no es un directorio.", file=sys.stderr)
+            sys.exit(1)
+        
+        return project_path
+    
+    # Si no se pasó argumento, preguntar interactivamente
+    while True:
         try:
-            from dotenv import load_dotenv
-            load_dotenv(dotenv_path=ENV_FILE, override=True)
-        except ImportError:
-            # Si python-dotenv no está disponible, cargar manualmente
-            print("⚠️  python-dotenv no está instalado. Cargando .env manualmente...", file=sys.stderr)
-            with open(ENV_FILE, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    # Ignorar comentarios y líneas vacías
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        # Eliminar comillas si existen
-                        value = value.strip('"\'')
-                        os.environ[key.strip()] = value
+            project_path = input("📁 Ingresa la ruta del proyecto: ").strip()
+        except UnicodeError as e:
+            print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
+            print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 reset_collections.py", file=sys.stderr)
+            sys.exit(1)
+        
+        if not project_path:
+            print("⚠️  La ruta no puede estar vacía. Intenta de nuevo.")
+            continue
+        
+        project_path = os.path.expanduser(project_path)
+        project_path = os.path.expandvars(project_path)
+        project_path = Path(project_path).resolve()
+        
+        if not project_path.exists():
+            print(f"⚠️  La ruta {project_path} no existe. Intenta de nuevo.")
+            continue
+        
+        if not project_path.is_dir():
+            print(f"⚠️  {project_path} no es un directorio. Intenta de nuevo.")
+            continue
+        
+        return project_path
+
+def read_mcp_json(mcp_json_path: Path) -> Dict[str, Any]:
+    """Lee el archivo mcp.json y retorna su contenido."""
+    if not mcp_json_path.exists():
+        print(f"❌ Error: No se encontró el archivo {mcp_json_path}", file=sys.stderr)
+        sys.exit(1)
+    
+    try:
+        with open(mcp_json_path, 'r', encoding='utf-8') as f:
+            mcp_config = json.load(f)
+        return mcp_config
+    except json.JSONDecodeError as e:
+        print(f"❌ Error al leer {mcp_json_path}: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print(f"⚠️  Error al cargar .env: {e}", file=sys.stderr)
-        print(f"💡 Asegúrate de que el archivo .env existe en {CHROMA_MCP_SERVER_ROOT}", file=sys.stderr)
-else:
-    print(f"⚠️  No se encontró el archivo .env en {CHROMA_MCP_SERVER_ROOT}", file=sys.stderr)
-    template_file = SCRIPT_DIR / "env-template"
-    if template_file.exists():
-        print(f"💡 Copia env-template a .env: cp {template_file} {ENV_FILE}", file=sys.stderr)
-    else:
-        print(f"💡 Crea un archivo .env en {CHROMA_MCP_SERVER_ROOT} con las variables de entorno necesarias.", file=sys.stderr)
+        print(f"❌ Error al leer {mcp_json_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def get_chroma_env_vars_from_mcp_json(mcp_config: Dict[str, Any]) -> Dict[str, str]:
+    """Extrae todas las variables de entorno relevantes del mcp.json."""
+    chroma_config = mcp_config.get("mcpServers", {}).get("chroma", {})
+    env_vars = chroma_config.get("env", {})
+    
+    # Variables relevantes para conectar a ChromaDB
+    relevant_vars = {
+        "CHROMA_CLIENT_TYPE": env_vars.get("CHROMA_CLIENT_TYPE"),
+        "CHROMA_HOST": env_vars.get("CHROMA_HOST"),
+        "CHROMA_PORT": env_vars.get("CHROMA_PORT"),
+        "CHROMA_SSL": env_vars.get("CHROMA_SSL"),
+        "CHROMA_API_KEY": env_vars.get("CHROMA_API_KEY"),
+        "CHROMA_TENANT": env_vars.get("CHROMA_TENANT"),
+        "CHROMA_DATABASE": env_vars.get("CHROMA_DATABASE"),
+        "CHROMA_DATA_DIR": env_vars.get("CHROMA_DATA_DIR"),
+        "CHROMA_EMBEDDING_FUNCTION": env_vars.get("CHROMA_EMBEDDING_FUNCTION"),
+        "OPENAI_API_KEY": env_vars.get("OPENAI_API_KEY"),
+    }
+    
+    return {k: v for k, v in relevant_vars.items() if v is not None}
 
 # Agregar el directorio src al path para importar módulos
-# Usar la raíz del proyecto calculada dinámicamente
-project_root = CHROMA_MCP_SERVER_ROOT
-sys.path.insert(0, str(project_root / "src"))  # chroma_mcp_server/src
+sys.path.insert(0, str(CHROMA_MCP_SERVER_ROOT / "src"))
 
-import chromadb
-from chroma_mcp.utils.chroma_client import get_chroma_client, get_embedding_function
-from chroma_mcp.types import ChromaClientConfig
+from chroma_mcp_client.connection import get_client_and_ef
 
 def main():
     """Borra todas las colecciones y las recrea."""
-    # Obtener configuración del cliente desde variables de entorno
-    client_config = ChromaClientConfig(
-        client_type=os.getenv("CHROMA_CLIENT_TYPE", "persistent"),
-        data_dir=os.getenv("CHROMA_DATA_DIR", "./chroma_data"),
-        host=os.getenv("CHROMA_HOST", "localhost"),
-        port=os.getenv("CHROMA_PORT", "8000"),
-        ssl=os.getenv("CHROMA_SSL", "false").lower() in ["true", "1", "yes"],
-        tenant=os.getenv("CHROMA_TENANT", chromadb.DEFAULT_TENANT),
-        database=os.getenv("CHROMA_DATABASE", chromadb.DEFAULT_DATABASE),
-        api_key=os.getenv("CHROMA_API_KEY"),
+    parser = argparse.ArgumentParser(
+        description="Borra todas las colecciones de ChromaDB y las recrea.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
-
-    # Conectar a ChromaDB
-    print("🔌 Conectando a ChromaDB...")
-    client = get_chroma_client(config=client_config)
-    ef = get_embedding_function(os.getenv("CHROMA_EMBEDDING_FUNCTION", "default"))
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        help="Ruta del proyecto (si no se proporciona, se pregunta interactivamente)"
+    )
+    
+    args = parser.parse_args()
+    
+    print("🔄 Reseteando colecciones de ChromaDB\n")
+    
+    # Obtener la ruta del proyecto
+    project_path = get_project_path(args.project_path)
+    print(f"✅ Proyecto: {project_path}\n")
+    
+    # Leer mcp.json
+    mcp_json_path = project_path / ".cursor" / "mcp.json"
+    print(f"📖 Leyendo configuración desde {mcp_json_path}...")
+    mcp_config = read_mcp_json(mcp_json_path)
+    
+    # Extraer variables de entorno del mcp.json
+    env_vars = get_chroma_env_vars_from_mcp_json(mcp_config)
+    
+    # Convertir SSL de string a bool si está presente
+    ssl_val = None
+    if "CHROMA_SSL" in env_vars:
+        ssl_str = env_vars["CHROMA_SSL"]
+        ssl_val = ssl_str.lower() in ["true", "1", "yes"]
+    
+    # Cambiar al directorio del proyecto del usuario para que find_project_root()
+    # encuentre el .env del proyecto del usuario si existe
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(str(project_path))
+        
+        # Conectar a ChromaDB usando el cliente de chroma_mcp_client
+        # Pasando TODOS los parámetros directamente desde el mcp.json
+        print("🔌 Conectando a ChromaDB...")
+        client, ef = get_client_and_ef(
+            tenant=env_vars.get("CHROMA_TENANT"),
+            database=env_vars.get("CHROMA_DATABASE"),
+            host=env_vars.get("CHROMA_HOST"),
+            port=env_vars.get("CHROMA_PORT"),
+            client_type=env_vars.get("CHROMA_CLIENT_TYPE"),
+            ssl=ssl_val,
+            api_key=env_vars.get("CHROMA_API_KEY"),
+            data_dir=env_vars.get("CHROMA_DATA_DIR"),
+            embedding_function=env_vars.get("CHROMA_EMBEDDING_FUNCTION"),
+            openai_api_key=env_vars.get("OPENAI_API_KEY"),
+        )
+    finally:
+        # Restaurar el directorio original
+        os.chdir(original_cwd)
 
     # Colecciones a borrar
     collections_to_delete = [

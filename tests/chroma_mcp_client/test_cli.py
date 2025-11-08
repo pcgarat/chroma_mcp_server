@@ -151,7 +151,15 @@ def test_cli_command_parses_and_calls_connect(mock_get_client_and_ef, mock_argpa
     main()
 
     # Assert get_client_and_ef was called correctly
-    mock_get_client_and_ef.assert_called_once_with()  # Called with default env_path=None
+    # Now it should be called with tenant and database from environment (may be None)
+    mock_get_client_and_ef.assert_called_once()
+    # Verify it was called with tenant and database parameters (even if None)
+    call_args = mock_get_client_and_ef.call_args
+    assert call_args is not None
+    # The function should be called with tenant and database as keyword arguments
+    # These may be None if not set in environment, but should be present in kwargs
+    assert 'tenant' in call_args.kwargs
+    assert 'database' in call_args.kwargs
 
 
 @patch("argparse.ArgumentParser")

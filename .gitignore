@@ -225,6 +225,14 @@ logs/
 # Cursor
 .cursor/*
 !.cursor/rules/
+# Ignore generated Cursor rules
+.cursor/rules/daily_workflow.mdc
+.cursor/rules/debug_assist.mdc
+.cursor/rules/derived_learnings.mdc
+.cursor/rules/main_memory_rule.mdc
+.cursor/rules/thinking_sessions.mdc
+.cursor/rules/validation_evidence.mdc
+.cursor/rules/workflow.mdc
 
 # Local files
 .local/

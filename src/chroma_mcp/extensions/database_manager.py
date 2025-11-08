@@ -1,7 +1,7 @@
 """
 Gestor de base de datos personalizado.
 
-Verifica y crea automáticamente la base de datos cuando se usa cliente HTTP,
+Verifica y crea automáticamente el tenant y la base de datos cuando se usa cliente HTTP,
 sin modificar el código core del servidor.
 """
 
@@ -21,6 +21,111 @@ except ImportError:
     # No loguear warning aquí para evitar spam, solo cuando se intente usar
 
 
+def ensure_tenant_exists(
+    host: str,
+    port: int,
+    tenant: str,
+    api_key: Optional[str] = None,
+    ssl: bool = False,
+    verbose: bool = False,
+) -> bool:
+    """
+    Verifica si el tenant existe y lo crea si no existe.
+    
+    Args:
+        host: Host del servidor ChromaDB
+        port: Puerto del servidor ChromaDB
+        tenant: Nombre del tenant
+        api_key: API key opcional para autenticación
+        ssl: Si se usa SSL
+        verbose: Si se debe mostrar información detallada
+        
+    Returns:
+        True si el tenant existe o se creó exitosamente, False en caso contrario
+    """
+    if not REQUESTS_AVAILABLE:
+        # requests no está disponible, la verificación es opcional
+        # El código continuará normalmente sin verificación
+        logger.debug("requests no está disponible. Omitiendo verificación automática de tenant.")
+        return False
+    
+    # Solo verificar si no es el tenant por defecto
+    if tenant == "default_tenant":
+        if verbose:
+            logger.debug("Usando tenant por defecto, omitiendo verificación")
+        return True
+    
+    protocol = "https" if ssl else "http"
+    base_url = f"{protocol}://{host}:{port}"
+    
+    # Preparar headers
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    headers["Content-Type"] = "application/json"
+    
+    # Verificar si el tenant existe
+    check_url = f"{base_url}/api/v2/tenants/{tenant}"
+    
+    try:
+        if verbose:
+            logger.info(f"Verificando tenant '{tenant}'...")
+        
+        response = requests.get(check_url, headers=headers, timeout=5)
+        status_code = response.status_code
+        
+        if verbose:
+            logger.debug(f"Código de respuesta: {status_code}")
+        
+        if status_code == 200:
+            if verbose:
+                logger.info(f"Tenant '{tenant}' ya existe")
+            return True
+        elif status_code == 404:
+            # El tenant no existe, crearlo
+            if verbose:
+                logger.info(f"Tenant '{tenant}' no existe, creándolo...")
+            
+            create_url = f"{base_url}/api/v2/tenants"
+            create_data = {"name": tenant}
+            
+            create_response = requests.post(
+                create_url,
+                headers=headers,
+                json=create_data,
+                timeout=5
+            )
+            
+            create_status = create_response.status_code
+            
+            if create_status in (200, 201):
+                if verbose:
+                    logger.info(f"Tenant '{tenant}' creado exitosamente")
+                return True
+            else:
+                logger.warning(
+                    f"No se pudo crear el tenant '{tenant}' "
+                    f"(código: {create_status}). Continuando..."
+                )
+                return False
+        else:
+            logger.warning(
+                f"Error al verificar tenant '{tenant}' "
+                f"(código: {status_code}). Continuando..."
+            )
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        logger.warning(
+            f"Error al verificar/crear tenant '{tenant}': {e}. "
+            "Continuando sin verificación..."
+        )
+        return False
+    except Exception as e:
+        logger.error(f"Error inesperado al verificar/crear tenant: {e}", exc_info=True)
+        return False
+
+
 def ensure_database_exists(
     host: str,
     port: int,
@@ -31,7 +136,9 @@ def ensure_database_exists(
     verbose: bool = False,
 ) -> bool:
     """
-    Verifica si la base de datos existe y la crea si no existe.
+    Verifica si el tenant y la base de datos existen y los crea si no existen.
+    
+    Primero verifica/crea el tenant, luego verifica/crea la base de datos.
     
     Args:
         host: Host del servidor ChromaDB
@@ -43,7 +150,7 @@ def ensure_database_exists(
         verbose: Si se debe mostrar información detallada
         
     Returns:
-        True si la base de datos existe o se creó exitosamente, False en caso contrario
+        True si el tenant y la base de datos existen o se crearon exitosamente, False en caso contrario
     """
     if not REQUESTS_AVAILABLE:
         # requests no está disponible, la verificación es opcional
@@ -56,6 +163,14 @@ def ensure_database_exists(
         if verbose:
             logger.debug("Usando tenant/database por defecto, omitiendo verificación")
         return True
+    
+    # Primero asegurar que el tenant existe
+    if not ensure_tenant_exists(host, port, tenant, api_key, ssl, verbose):
+        logger.warning(
+            f"No se pudo verificar/crear el tenant '{tenant}'. "
+            "Continuando con verificación de base de datos..."
+        )
+        # Continuar de todas formas, puede que el tenant exista pero la verificación falló
     
     protocol = "https" if ssl else "http"
     base_url = f"{protocol}://{host}:{port}"

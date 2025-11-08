@@ -600,7 +600,10 @@ def main():
     # Initialize client/EF early to catch connection errors
     try:
         logger.info("Initializing ChromaDB connection...")
-        client, ef = get_client_and_ef()  # Loads config from .env via connection module
+        # Read all config from environment to ensure correct cache key
+        # This allows multiple concurrent projects with different tenants/databases/configs
+        from .connection import get_client_and_ef_from_env
+        client, ef = get_client_and_ef_from_env()  # Loads config from .env via connection module
         logger.info(
             f"ChromaDB connection successful (Client type: {client.__class__.__name__}, EF: {ef.__class__.__name__ if ef else 'Default'})"
         )

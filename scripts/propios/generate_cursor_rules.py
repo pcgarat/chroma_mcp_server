@@ -5,7 +5,9 @@ Script para generar reglas de Cursor en .cursor/rules basadas en las colecciones
 """
 import os
 import sys
+import argparse
 from pathlib import Path
+from typing import Optional
 import shutil
 
 # Configurar codificación UTF-8 para stdin/stdout/stderr
@@ -47,12 +49,28 @@ def get_chroma_mcp_server_root() -> Path:
     fallback_root = script_dir.parent.parent
     return fallback_root.resolve()
 
-def get_project_path() -> Path:
-    """Pregunta al usuario la ruta del proyecto destino."""
+def get_project_path(project_path_arg: Optional[str] = None) -> Path:
+    """Obtiene la ruta del proyecto destino, ya sea desde argumento o preguntando al usuario."""
+    if project_path_arg:
+        project_path = os.path.expanduser(project_path_arg)
+        project_path = os.path.expandvars(project_path)
+        project_path = Path(project_path).resolve()
+        
+        if not project_path.exists():
+            print(f"❌ Error: La ruta {project_path} no existe.", file=sys.stderr)
+            sys.exit(1)
+        
+        if not project_path.is_dir():
+            print(f"❌ Error: {project_path} no es un directorio.", file=sys.stderr)
+            sys.exit(1)
+        
+        return project_path
+    
+    # Si no se pasó argumento, preguntar interactivamente
     while True:
         try:
             project_path = input("📁 Ingresa la ruta del proyecto donde quieres generar las reglas de Cursor: ").strip()
-        except (UnicodeDecodeError, UnicodeError) as e:
+        except UnicodeError as e:
             print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
             print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 generate_cursor_rules.py", file=sys.stderr)
             sys.exit(1)
@@ -96,10 +114,22 @@ COLLECTIONS = [
 
 def main():
     """Genera las reglas de Cursor en .cursor/rules del proyecto especificado."""
+    parser = argparse.ArgumentParser(
+        description="Genera reglas de Cursor en .cursor/rules basadas en las colecciones de ChromaDB.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        help="Ruta del proyecto donde generar las reglas (si no se proporciona, se pregunta interactivamente)"
+    )
+    
+    args = parser.parse_args()
+    
     print("🔄 Generador de Reglas de Cursor para ChromaDB\n")
     
-    # Preguntar la ruta del proyecto destino
-    project_path = get_project_path()
+    # Obtener la ruta del proyecto destino
+    project_path = get_project_path(args.project_path)
     print(f"✅ Proyecto: {project_path}\n")
     
     # Definir la carpeta de destino en el proyecto especificado

@@ -229,7 +229,10 @@ def run_interactive_promotion(
     try:
         # Initialize client and EF
         logger.debug("Initializing Chroma connection for interactive promoter...")
-        client, ef = get_client_and_ef()
+        # Read all config from environment to ensure correct cache key
+        # This allows multiple concurrent projects with different tenants/databases/configs
+        from chroma_mcp_client.connection import get_client_and_ef_from_env
+        client, ef = get_client_and_ef_from_env()
         if not client or not ef:
             logger.error("Failed to initialize Chroma connection.")
             return

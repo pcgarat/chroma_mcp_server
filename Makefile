@@ -10,7 +10,7 @@ GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m # No Color
 
-.PHONY: help reset-collections generate-cursor-rules setup-env check-env setup-mcp-config index-project
+.PHONY: help reset-collections generate-cursor-rules setup-env check-env setup-mcp-config index-project setup-git-hook setup-all clean
 
 # Orden por defecto: mostrar ayuda
 .DEFAULT_GOAL := help
@@ -26,12 +26,15 @@ help: ## Muestra esta ayuda
 	@echo "  make generate-cursor-rules  # Genera reglas de Cursor optimizadas"
 	@echo "  make setup-mcp-config       # Configura el servidor MCP de ChromaDB en un proyecto"
 	@echo "  make index-project          # Indexa todos los documentos de un proyecto"
+	@echo "  make setup-git-hook         # Crea un hook post-commit para indexación automática"
+	@echo "  make setup-all              # Configuración completa de un proyecto (interactivo)"
+	@echo "  make clean                  # Limpia completamente un proyecto (borra colecciones, mcp.json, reglas, hooks)"
 	@echo "  make check-env              # Verifica que el archivo .env existe"
 	@echo ""
 
-reset-collections: ## Resetea todas las colecciones de ChromaDB (borra y recrea)
+reset-collections: ## Resetea todas las colecciones de ChromaDB (borra y recrea) - lee del mcp.json del proyecto
 	@echo "$(GREEN)🔄 Reseteando colecciones de ChromaDB...$(NC)"
-	@bash "$(SCRIPT_DIR)/reset-collections.sh"
+	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/reset_collections.py"
 
 generate-cursor-rules: ## Genera reglas de Cursor optimizadas en un proyecto (interactivo)
 	@echo "$(GREEN)📝 Generando reglas de Cursor...$(NC)"
@@ -49,6 +52,18 @@ setup-mcp-config: ## Configura el servidor MCP de ChromaDB en un proyecto (inter
 index-project: ## Indexa todos los documentos de un proyecto (lee mcp.json para obtener CHROMA_TENANT)
 	@echo "$(GREEN)📚 Indexando proyecto...$(NC)"
 	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/index-project.py"
+
+setup-git-hook: ## Crea un hook post-commit para indexación automática (lee mcp.json del proyecto)
+	@echo "$(GREEN)🔧 Configurando hook de Git para indexación automática...$(NC)"
+	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/setup-git-hook.py"
+
+setup-all: ## Configuración completa de un proyecto (pregunta path una vez y ejecuta todas las configuraciones)
+	@echo "$(GREEN)🚀 Configuración completa de proyecto...$(NC)"
+	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/setup-all.py"
+
+clean: ## Limpia completamente un proyecto (borra colecciones, mcp.json, reglas, hooks)
+	@echo "$(GREEN)🧹 Limpiando proyecto...$(NC)"
+	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/clean-project.py"
 
 check-env: ## Verifica que el archivo .env existe y muestra su ubicación
 	@if [ -f ".env" ]; then \

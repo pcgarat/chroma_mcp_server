@@ -29,10 +29,52 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # Cargar variables de entorno desde el archivo .env
-# Usar set -a para exportar automáticamente todas las variables
-set -a
-source "$ENV_FILE"
-set +a
+# Solo establecer variables que no estén ya definidas (para que las variables
+# pasadas desde el mcp.json del proyecto del usuario tengan prioridad)
+# Usar un enfoque que respete el formato del .env (valores con espacios, comillas, etc.)
+
+# Lista de variables de ChromaDB que pueden venir del .env
+CHROMA_VARS=(
+    CHROMA_CLIENT_TYPE
+    CHROMA_HOST
+    CHROMA_PORT
+    CHROMA_SSL
+    CHROMA_API_KEY
+    CHROMA_TENANT
+    CHROMA_DATABASE
+    CHROMA_DATA_DIR
+    CHROMA_EMBEDDING_FUNCTION
+    CHROMA_OPENAI_EMBEDDING_MODEL
+    CHROMA_OPENAI_EMBEDDING_DIMENSIONS
+    OPENAI_API_KEY
+)
+
+# Cargar el .env en un subshell y exportar solo las variables no definidas
+# Usar un archivo temporal para pasar los valores del subshell al entorno padre
+TEMP_ENV_FILE=$(mktemp)
+(
+    set -a
+    source "$ENV_FILE" 2>/dev/null || true
+    set +a
+    
+    # Guardar los valores de las variables en el archivo temporal
+    for var in "${CHROMA_VARS[@]}"; do
+        value=$(eval "echo \$$var" 2>/dev/null || echo "")
+        if [ -n "$value" ]; then
+            echo "$var=$value" >> "$TEMP_ENV_FILE"
+        fi
+    done
+)
+
+# Exportar solo las variables que no estén ya definidas
+while IFS='=' read -r key value || [ -n "$key" ]; do
+    if [ -z "${!key}" ] && [ -n "$value" ]; then
+        export "$key=$value"
+    fi
+done < "$TEMP_ENV_FILE"
+
+# Limpiar el archivo temporal
+rm -f "$TEMP_ENV_FILE"
 
 # Verificar que se cargaron las variables esenciales
 if [ -z "$CHROMA_CLIENT_TYPE" ]; then

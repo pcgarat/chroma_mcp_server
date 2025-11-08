@@ -254,12 +254,11 @@ def store_test_results(
     """
     if not chroma_client:
         # Lazy import and get client if not provided
-        from chroma_mcp_client.connection import get_client_and_ef
+        from chroma_mcp_client.connection import get_client_and_ef_from_env
 
-        client, ef = get_client_and_ef(
-            # ef_name can be passed or defaults to env var
-            # CHROMA_EMBEDDING_FUNCTION or "default"
-        )
+        # Read all config from environment to ensure correct cache key
+        # This allows multiple concurrent projects with different tenants/databases/configs
+        client, ef = get_client_and_ef_from_env()
         chroma_client = client
     else:
         # If chroma_client is provided, we still need to get the configured EF
