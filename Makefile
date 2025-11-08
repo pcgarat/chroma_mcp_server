@@ -10,7 +10,7 @@ GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m # No Color
 
-.PHONY: help reset-collections generate-cursor-rules setup-env check-env setup-mcp-config index-project setup-git-hook setup-all clean
+.PHONY: help reset-collections generate-cursor-rules setup-env check-env setup-mcp-config index-project setup-git-hook setup-all clean verify-collections
 
 # Orden por defecto: mostrar ayuda
 .DEFAULT_GOAL := help
@@ -28,6 +28,7 @@ help: ## Muestra esta ayuda
 	@echo "  make index-project          # Indexa todos los documentos de un proyecto"
 	@echo "  make setup-git-hook         # Crea un hook post-commit para indexación automática"
 	@echo "  make setup-all              # Configuración completa de un proyecto (interactivo)"
+	@echo "  make verify-collections     # Verifica que las colecciones estén correctamente configuradas"
 	@echo "  make clean                  # Limpia completamente un proyecto (borra colecciones, mcp.json, reglas, hooks)"
 	@echo "  make check-env              # Verifica que el archivo .env existe"
 	@echo ""
@@ -79,4 +80,8 @@ check-env: ## Verifica que el archivo .env existe y muestra su ubicación
 		fi; \
 		exit 1; \
 	fi
+
+verify-collections: ## Verifica que las colecciones de ChromaDB estén correctamente configuradas (interactivo)
+	@echo "$(GREEN)🔍 Verificando colecciones de ChromaDB...$(NC)"
+	@PYTHONIOENCODING=utf-8 python3 "$(SCRIPT_DIR)/verify-collections.py"
 

@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import argparse
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -134,21 +135,83 @@ def get_project_path(project_path_arg: Optional[str] = None) -> Path:
         
         return project_path
 
-def get_tenant(tenant_arg: Optional[str] = None) -> str:
+def normalize_tenant_name(tenant: str) -> str:
+    """
+    Normaliza el nombre del tenant:
+    - Si es una ruta, extrae el nombre del proyecto
+    - Reemplaza caracteres inválidos con guiones bajos
+    - Convierte a minúsculas
+    - Elimina barras y caracteres especiales
+    """
+    if not tenant:
+        return "default_tenant"
+    
+    # Si parece una ruta (contiene / o \), extraer el nombre del proyecto
+    if '/' in tenant or '\\' in tenant:
+        # Convertir a Path y obtener el nombre
+        try:
+            path = Path(tenant)
+            # Si es una ruta absoluta, obtener el nombre del directorio
+            if path.is_absolute() or '/' in tenant:
+                tenant = path.name if path.name else path.parts[-1] if path.parts else "default_tenant"
+            else:
+                tenant = path.name
+        except Exception:
+            # Si falla, intentar extraer el último componente
+            parts = tenant.replace('\\', '/').split('/')
+            tenant = parts[-1] if parts else "default_tenant"
+    
+    # Normalizar: convertir a minúsculas, reemplazar espacios y caracteres especiales
+    # Reemplazar caracteres no alfanuméricos (excepto guiones bajos y guiones) con guiones bajos
+    tenant = re.sub(r'[^a-zA-Z0-9_-]', '_', tenant)
+    # Eliminar guiones bajos múltiples
+    tenant = re.sub(r'_+', '_', tenant)
+    # Eliminar guiones bajos al inicio y final
+    tenant = tenant.strip('_')
+    # Convertir a minúsculas
+    tenant = tenant.lower()
+    
+    # Si después de normalizar está vacío, usar default
+    if not tenant:
+        tenant = "default_tenant"
+    
+    return tenant
+
+def suggest_tenant_from_project(project_path: Path) -> str:
+    """Sugiere un nombre de tenant basado en el nombre del proyecto."""
+    project_name = project_path.name
+    return normalize_tenant_name(project_name)
+
+def get_tenant(tenant_arg: Optional[str] = None, project_path: Optional[Path] = None) -> str:
     """Obtiene el tenant, ya sea desde argumento o preguntando al usuario."""
+    # Si se proporciona un argumento, normalizarlo
     if tenant_arg:
-        return tenant_arg if tenant_arg else "default_tenant"
+        return normalize_tenant_name(tenant_arg)
+    
+    # Sugerir un tenant basado en el nombre del proyecto si está disponible
+    suggested_tenant = None
+    if project_path:
+        suggested_tenant = suggest_tenant_from_project(project_path)
     
     # Si no se pasó argumento, preguntar interactivamente
     try:
-        tenant = input("🏢 Ingresa el CHROMA_TENANT (o presiona Enter para usar 'default_tenant'): ").strip()
+        if suggested_tenant:
+            prompt = f"🏢 Ingresa el CHROMA_TENANT (o presiona Enter para usar '{suggested_tenant}'): "
+        else:
+            prompt = "🏢 Ingresa el CHROMA_TENANT (o presiona Enter para usar 'default_tenant'): "
+        
+        tenant = input(prompt).strip()
     except UnicodeError as e:
         print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
         print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 setup-mcp-config.py", file=sys.stderr)
         sys.exit(1)
     
+    # Si está vacío, usar la sugerencia o default
     if not tenant:
-        tenant = "default_tenant"
+        tenant = suggested_tenant if suggested_tenant else "default_tenant"
+    else:
+        # Normalizar el tenant ingresado por el usuario
+        tenant = normalize_tenant_name(tenant)
     
     return tenant
 
@@ -259,8 +322,8 @@ def main():
     project_path = get_project_path(args.project_path)
     print(f"✅ Proyecto destino: {project_path}\n")
     
-    # Obtener tenant
-    tenant = get_tenant(args.tenant)
+    # Obtener tenant (pasar project_path para sugerir automáticamente)
+    tenant = get_tenant(args.tenant, project_path)
     database = env_vars.get("CHROMA_DATABASE", "default_database")
     print(f"✅ CHROMA_TENANT: {tenant}")
     print(f"✅ CHROMA_DATABASE: {database} (del .env)\n")

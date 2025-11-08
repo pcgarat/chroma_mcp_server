@@ -5,6 +5,7 @@ Document management tools for ChromaDB operations.
 import time
 import json
 import logging
+import os
 import uuid
 import numpy as np  # Needed for NumpyEncoder usage
 import datetime  # Add for ISO format date handling
@@ -57,7 +58,13 @@ def _get_server_embedding_function():
     Raises:
         McpError: If the embedding function cannot be loaded (e.g., missing API key).
     """
+    logger = get_logger("tools.document")
     server_ef_name = get_server_config().embedding_function_name
+    logger.debug(f"Using server embedding function: '{server_ef_name}'")
+    if server_ef_name.lower() == "openai":
+        openai_model = os.getenv("CHROMA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        openai_dimensions = os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536")
+        logger.debug(f"OpenAI configuration - Model: {openai_model}, Dimensions: {openai_dimensions}")
     try:
         return get_embedding_function(server_ef_name)
     except Exception as e:

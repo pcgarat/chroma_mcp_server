@@ -4,6 +4,7 @@ Collection management tools for ChromaDB operations.
 
 import json
 import logging
+import os
 import chromadb
 from chromadb.api.client import ClientAPI
 from chromadb.errors import InvalidDimensionException
@@ -38,7 +39,13 @@ from ..types import ChromaClientConfig
 # --- Helper to get server embedding function ---
 def _get_server_embedding_function():
     """Get the embedding function configured for the server."""
+    logger = get_logger("tools.collection")
     server_ef_name = get_server_config().embedding_function_name
+    logger.debug(f"Using server embedding function: '{server_ef_name}'")
+    if server_ef_name.lower() == "openai":
+        openai_model = os.getenv("CHROMA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        openai_dimensions = os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536")
+        logger.debug(f"OpenAI configuration - Model: {openai_model}, Dimensions: {openai_dimensions}")
     return get_embedding_function(server_ef_name)
 
 

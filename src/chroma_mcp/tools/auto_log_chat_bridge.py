@@ -83,11 +83,26 @@ def _do_log_chat(input_model: LogChatInput) -> str:
     from chroma_mcp_client.auto_log_chat_impl import log_chat_to_chroma
 
     # Get client and embedding function
-    # Read tenant and database from environment to ensure correct cache key
+    # Read tenant, database, and embedding function from environment to ensure correct cache key
     # This allows multiple concurrent projects with different tenants/databases
     tenant = os.getenv("CHROMA_TENANT")
     database = os.getenv("CHROMA_DATABASE")
-    client, _ = get_client_and_ef(tenant=tenant, database=database)
+    embedding_function = os.getenv("CHROMA_EMBEDDING_FUNCTION", "default")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    
+    # Log embedding function configuration for debugging
+    logger.debug(f"Using embedding function: {embedding_function}")
+    if embedding_function.lower() == "openai":
+        logger.debug(f"OpenAI API key is {'SET' if openai_api_key else 'NOT SET'}")
+        logger.debug(f"OpenAI model: {os.getenv('CHROMA_OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')}")
+        logger.debug(f"OpenAI dimensions: {os.getenv('CHROMA_OPENAI_EMBEDDING_DIMENSIONS', '1536')}")
+    
+    client, _ = get_client_and_ef(
+        tenant=tenant,
+        database=database,
+        embedding_function=embedding_function,
+        openai_api_key=openai_api_key
+    )
 
     # Extract parameters from the input model
     prompt_summary = input_model.prompt_summary

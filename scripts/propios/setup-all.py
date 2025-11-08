@@ -11,15 +11,19 @@ from pathlib import Path
 from typing import Optional
 
 # Configurar codificación UTF-8 para stdin/stdout/stderr
+# Asegurar que PYTHONIOENCODING esté configurado antes de cualquier operación
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 if sys.version_info >= (3, 7):
     try:
-        sys.stdin.reconfigure(encoding='utf-8')
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
-    except (AttributeError, ValueError):
-        os.environ['PYTHONIOENCODING'] = 'utf-8'
-else:
-    os.environ['PYTHONIOENCODING'] = 'utf-8'
+        # Intentar reconfigurar los streams con manejo de errores
+        if sys.stdin.isatty():
+            sys.stdin.reconfigure(encoding='utf-8', errors='replace')
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError, OSError):
+        # Si falla, al menos tenemos PYTHONIOENCODING configurado
+        pass
 
 def get_chroma_mcp_server_root() -> Path:
     """Obtiene la raíz del proyecto chroma_mcp_server."""
@@ -39,14 +43,41 @@ def get_chroma_mcp_server_root() -> Path:
     fallback_root = script_dir.parent.parent
     return fallback_root.resolve()
 
+def safe_input(prompt: str) -> str:
+    """Lee entrada del usuario con manejo robusto de codificación UTF-8."""
+    try:
+        # Intentar usar input() normal primero (más compatible)
+        return input(prompt).strip()
+    except (UnicodeError, UnicodeDecodeError):
+        # Si falla, usar readline() directamente
+        try:
+            sys.stdout.write(prompt)
+            sys.stdout.flush()
+            line = sys.stdin.readline()
+            if not line:
+                raise EOFError("Entrada cancelada")
+            if isinstance(line, bytes):
+                return line.decode('utf-8', errors='replace').strip()
+            return line.strip()
+        except (UnicodeError, UnicodeDecodeError, EOFError) as e:
+            raise
+
 def get_project_path() -> Path:
     """Pregunta al usuario la ruta del proyecto destino."""
     while True:
         try:
-            project_path = input("📁 Ingresa la ruta del proyecto a configurar: ").strip()
-        except UnicodeError as e:
-            print(f"⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
-            print("💡 Intenta ejecutar el script con: PYTHONIOENCODING=utf-8 python3 setup-all.py", file=sys.stderr)
+            project_path = safe_input("📁 Ingresa la ruta del proyecto a configurar: ")
+                
+        except (UnicodeError, UnicodeDecodeError) as e:
+            print(f"\n⚠️  Error de codificación al leer la entrada: {e}", file=sys.stderr)
+            print("💡 Asegúrate de que tu terminal esté configurado con UTF-8", file=sys.stderr)
+            print("💡 O ejecuta: export PYTHONIOENCODING=utf-8", file=sys.stderr)
+            sys.exit(1)
+        except (EOFError, KeyboardInterrupt):
+            print("\n⚠️  Operación cancelada.", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"\n⚠️  Error inesperado al leer entrada: {e}", file=sys.stderr)
             sys.exit(1)
         
         if not project_path:
@@ -83,7 +114,11 @@ def create_env_from_template(chroma_mcp_server_root: Path) -> bool:
             shutil.copy(template_file, env_file)
             print(f"✅ Archivo .env creado desde template en {env_file}")
             print("⚠️  IMPORTANTE: Edita el archivo .env con tus valores antes de continuar.")
-            response = input("¿Has editado el archivo .env con tus valores? (s/N): ").strip().lower()
+            try:
+                response = safe_input("¿Has editado el archivo .env con tus valores? (s/N): ").lower()
+            except (UnicodeError, UnicodeDecodeError, EOFError, KeyboardInterrupt):
+                response = 'n'
+            
             if response not in ['s', 'sí', 'si', 'y', 'yes']:
                 print("❌ Por favor, edita el archivo .env y vuelve a ejecutar setup-all.")
                 return False
@@ -229,9 +264,12 @@ def main():
     print("7️⃣  Indexación del código del proyecto")
     print("=" * 60)
     try:
-        response = input("¿Deseas indexar el código del proyecto ahora? (s/N): ").strip().lower()
-    except UnicodeError as e:
-        print(f"⚠️  Error de codificación: {e}", file=sys.stderr)
+        response = safe_input("¿Deseas indexar el código del proyecto ahora? (s/N): ").lower()
+    except (UnicodeError, UnicodeDecodeError, EOFError) as e:
+        print(f"\n⚠️  Error de codificación: {e}", file=sys.stderr)
+        response = 'n'
+    except KeyboardInterrupt:
+        print("\n⚠️  Operación cancelada. Omitiendo indexación.", file=sys.stderr)
         response = 'n'
     
     if response in ['s', 'sí', 'si', 'y', 'yes']:
