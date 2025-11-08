@@ -10,6 +10,13 @@ import glob
 import re
 import uuid
 
+# Try to import tiktoken for accurate token counting
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+
 # Explicitly configure logger for this module to ensure DEBUG messages are shown when configured
 logger = logging.getLogger(__name__)
 # Check if handlers are already present to avoid duplicates if run multiple times
@@ -50,6 +57,109 @@ DEFAULT_SUPPORTED_SUFFIXES: Set[str] = {
 
 # Default collection name (consider making this configurable)
 DEFAULT_COLLECTION_NAME = "codebase_v1"
+
+# OpenAI token limits for embedding models
+# All OpenAI embedding models have a maximum context length of 8192 tokens
+OPENAI_MAX_TOKENS = 8192
+# Conservative estimate: 1 token ≈ 4 characters for code/text
+# This is a safe fallback when tiktoken is not available
+TOKENS_PER_CHAR_ESTIMATE = 0.25  # 4 chars per token
+
+
+def count_tokens(text: str, model_name: str = "text-embedding-3-small") -> int:
+    """
+    Count tokens in text using tiktoken if available, otherwise use estimation.
+    
+    Args:
+        text: Text to count tokens for
+        model_name: OpenAI model name (used to select encoding)
+    
+    Returns:
+        Estimated number of tokens
+    """
+    if TIKTOKEN_AVAILABLE:
+        try:
+            # Map OpenAI embedding models to their encodings
+            # text-embedding-3-small and text-embedding-3-large use cl100k_base
+            # text-embedding-ada-002 uses cl100k_base
+            encoding_name = "cl100k_base"  # Used by all current OpenAI embedding models
+            
+            encoding = tiktoken.get_encoding(encoding_name)
+            return len(encoding.encode(text))
+        except Exception as e:
+            logger.warning(f"Error counting tokens with tiktoken: {e}. Using estimation.")
+            # Fall through to estimation
+    
+    # Fallback: conservative estimation
+    # For code, tokens are typically shorter, so we use a conservative estimate
+    return int(len(text) * TOKENS_PER_CHAR_ESTIMATE)
+
+
+def truncate_chunk_to_token_limit(
+    chunk_text: str, 
+    max_tokens: int = OPENAI_MAX_TOKENS,
+    model_name: str = "text-embedding-3-small"
+) -> str:
+    """
+    Truncate a chunk to fit within token limit, preserving as much content as possible.
+    
+    Args:
+        chunk_text: Text chunk to truncate
+        max_tokens: Maximum number of tokens allowed
+        model_name: OpenAI model name (for token counting)
+    
+    Returns:
+        Truncated text that fits within token limit
+    """
+    token_count = count_tokens(chunk_text, model_name)
+    
+    if token_count <= max_tokens:
+        return chunk_text
+    
+    logger.warning(
+        f"Chunk exceeds token limit ({token_count} > {max_tokens} tokens). "
+        f"Truncating to fit within limit."
+    )
+    
+    # Binary search for the right truncation point
+    # This is more efficient than linear search
+    left = 0
+    right = len(chunk_text)
+    best_length = 0
+    
+    while left < right:
+        mid = (left + right) // 2
+        truncated = chunk_text[:mid]
+        tokens = count_tokens(truncated, model_name)
+        
+        if tokens <= max_tokens:
+            best_length = mid
+            left = mid + 1
+        else:
+            right = mid
+    
+    # Truncate to the best length found
+    truncated_text = chunk_text[:best_length]
+    
+    # Add a note that the chunk was truncated
+    if len(truncated_text) < len(chunk_text):
+        truncated_text += "\n\n[... chunk truncated due to token limit ...]"
+    
+    final_token_count = count_tokens(truncated_text, model_name)
+    if final_token_count > max_tokens:
+        # If still over limit (due to truncation message), remove it and truncate more
+        truncated_text = chunk_text[:best_length]
+        # Try to find a safe truncation point without the message
+        while count_tokens(truncated_text, model_name) > max_tokens:
+            best_length = int(best_length * 0.95)  # Reduce by 5%
+            truncated_text = chunk_text[:best_length]
+    
+    logger.debug(
+        f"Truncated chunk from {token_count} to {count_tokens(truncated_text, model_name)} tokens "
+        f"({len(chunk_text)} to {len(truncated_text)} characters)"
+    )
+    
+    return truncated_text
 
 
 def get_current_commit_sha(repo_root: Path) -> Optional[str]:
@@ -390,12 +500,50 @@ def index_file(
         # Log info about chunking
         logger.debug(f"Split {file_path} into {len(chunks_with_pos)} chunks")
 
+        # Check if we're using OpenAI embedding function and need to validate token limits
+        is_openai_embedding = False
+        openai_model_name = "text-embedding-3-small"
+        
+        # First check environment variable (most reliable)
+        embedding_function_name = os.getenv("CHROMA_EMBEDDING_FUNCTION", "").lower()
+        if embedding_function_name == "openai":
+            is_openai_embedding = True
+            from chroma_mcp.utils.chroma_client import get_openai_embedding_model
+            openai_model_name = get_openai_embedding_model()
+            logger.info(f"✅ Detected OpenAI embedding function from env var with model: {openai_model_name}")
+        elif embedding_func is not None:
+            # Fallback: Check if embedding function is OpenAI by checking its type/name
+            ef_type_name = type(embedding_func).__name__
+            ef_str = str(embedding_func).lower()
+            if "OpenAI" in ef_type_name or "openai" in ef_str:
+                is_openai_embedding = True
+                # Try to get the model name from environment
+                from chroma_mcp.utils.chroma_client import get_openai_embedding_model
+                openai_model_name = get_openai_embedding_model()
+                logger.info(f"✅ Detected OpenAI embedding function from type '{ef_type_name}' with model: {openai_model_name}")
+        
+        if not is_openai_embedding:
+            logger.debug(f"Not using OpenAI embedding function (detected: {embedding_function_name or 'unknown'})")
+
         ids_list = []
         metadatas_list = []
         documents_list = []
         chunk_count = 0
+        truncated_count = 0
 
         for chunk_index, (chunk_text, start_line, end_line) in enumerate(chunks_with_pos):
+            # Validate and truncate chunk if using OpenAI and it exceeds token limit
+            original_chunk_text = chunk_text
+            if is_openai_embedding:
+                token_count = count_tokens(chunk_text, openai_model_name)
+                if token_count > OPENAI_MAX_TOKENS:
+                    chunk_text = truncate_chunk_to_token_limit(chunk_text, OPENAI_MAX_TOKENS, openai_model_name)
+                    truncated_count += 1
+                    logger.warning(
+                        f"Chunk {chunk_index} in {relative_path} exceeded token limit "
+                        f"({token_count} > {OPENAI_MAX_TOKENS}). Truncated."
+                    )
+            
             # Generate chunk_id: relative_path:commit_sha:chunk_index
             chunk_id = f"{relative_path}:{commit_sha}:{chunk_index}"
 
@@ -409,6 +557,11 @@ def index_file(
                 "last_indexed_utc": time.time(),
                 "chunk_id": chunk_id,  # Also store chunk_id in metadata for easier retrieval if needed
             }
+            
+            # Add metadata flag if chunk was truncated
+            if chunk_text != original_chunk_text:
+                chunk_metadata["truncated"] = True
+                chunk_metadata["original_token_count"] = count_tokens(original_chunk_text, openai_model_name)
 
             ids_list.append(chunk_id)
             metadatas_list.append(chunk_metadata)
@@ -419,10 +572,156 @@ def index_file(
             logger.warning(f"No chunks generated to index for {relative_path} at commit {commit_sha}")
             return False
 
-        # Upsert all chunks for this file at once
-        collection.upsert(ids=ids_list, metadatas=metadatas_list, documents=documents_list)
-        logger.info(f"Indexed {chunk_count} chunks for: {relative_path} at commit {commit_sha[:7]}")
-        return True
+        # If using OpenAI, process chunks in small batches to avoid token limit errors
+        # ChromaDB may batch multiple documents together when calling the embedding API,
+        # which can cause the total token count to exceed the limit
+        # We'll process in batches, ensuring the total tokens in each batch don't exceed the limit
+        if is_openai_embedding:
+            # Process chunks in small batches, ensuring total tokens per batch < limit
+            # This is more efficient than one-by-one but still safe
+            logger.debug(f"Processing {chunk_count} chunks in safe batches for OpenAI embedding function")
+            successful_count = 0
+            batch_size = 5  # Start with small batches
+            max_tokens_per_batch = OPENAI_MAX_TOKENS - 500  # Leave margin for API overhead
+            
+            i = 0
+            while i < len(ids_list):
+                # Collect chunks for this batch
+                batch_ids = []
+                batch_metadatas = []
+                batch_documents = []
+                batch_tokens = 0
+                
+                # Add chunks to batch until we reach the token limit
+                while i < len(ids_list) and len(batch_ids) < batch_size:
+                    chunk_tokens = count_tokens(documents_list[i], openai_model_name)
+                    
+                    # If this chunk alone exceeds limit, it needs to be processed separately
+                    if chunk_tokens > OPENAI_MAX_TOKENS:
+                        # Process previous batch if any
+                        if batch_ids:
+                            try:
+                                collection.upsert(
+                                    ids=batch_ids,
+                                    metadatas=batch_metadatas,
+                                    documents=batch_documents
+                                )
+                                successful_count += len(batch_ids)
+                            except Exception as e:
+                                logger.error(f"Error processing batch in {relative_path}: {e}")
+                                # Fall back to individual processing for this batch
+                                for j in range(len(batch_ids)):
+                                    try:
+                                        collection.upsert(
+                                            ids=[batch_ids[j]],
+                                            metadatas=[batch_metadatas[j]],
+                                            documents=[batch_documents[j]]
+                                        )
+                                        successful_count += 1
+                                    except Exception as batch_e:
+                                        logger.error(f"Error indexing chunk {j} in batch: {batch_e}")
+                        
+                        # Process oversized chunk individually
+                        try:
+                            collection.upsert(
+                                ids=[ids_list[i]],
+                                metadatas=[metadatas_list[i]],
+                                documents=[documents_list[i]]
+                            )
+                            successful_count += 1
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "maximum context length" in error_msg or "8192 tokens" in error_msg:
+                                logger.warning(
+                                    f"Chunk {i} still exceeds limit after validation. "
+                                    f"Token count: {chunk_tokens}. Truncating more aggressively..."
+                                )
+                                more_truncated = truncate_chunk_to_token_limit(
+                                    documents_list[i], 
+                                    OPENAI_MAX_TOKENS - 200,  # More aggressive margin
+                                    openai_model_name
+                                )
+                                try:
+                                    collection.upsert(
+                                        ids=[ids_list[i]],
+                                        metadatas=[{**metadatas_list[i], "truncated": True}],
+                                        documents=[more_truncated]
+                                    )
+                                    successful_count += 1
+                                except Exception as retry_e:
+                                    logger.error(f"Failed to index chunk {i} even after aggressive truncation: {retry_e}")
+                            else:
+                                logger.error(f"Error indexing chunk {i} in {relative_path}: {e}")
+                        i += 1
+                        continue
+                    
+                    # Check if adding this chunk would exceed batch limit
+                    if batch_tokens + chunk_tokens > max_tokens_per_batch and batch_ids:
+                        # Process current batch before adding this chunk
+                        break
+                    
+                    # Add chunk to batch
+                    batch_ids.append(ids_list[i])
+                    batch_metadatas.append(metadatas_list[i])
+                    batch_documents.append(documents_list[i])
+                    batch_tokens += chunk_tokens
+                    i += 1
+                
+                # Process the batch
+                if batch_ids:
+                    try:
+                        collection.upsert(
+                            ids=batch_ids,
+                            metadatas=batch_metadatas,
+                            documents=batch_documents
+                        )
+                        successful_count += len(batch_ids)
+                        logger.debug(f"Successfully processed batch of {len(batch_ids)} chunks ({batch_tokens} tokens)")
+                    except Exception as e:
+                        error_msg = str(e)
+                        # If batch failed due to token limit, process individually
+                        if "maximum context length" in error_msg or "8192 tokens" in error_msg:
+                            logger.warning(
+                                f"Batch exceeded token limit ({batch_tokens} tokens). "
+                                f"Falling back to individual processing for this batch."
+                            )
+                            for j in range(len(batch_ids)):
+                                try:
+                                    collection.upsert(
+                                        ids=[batch_ids[j]],
+                                        metadatas=[batch_metadatas[j]],
+                                        documents=[batch_documents[j]]
+                                    )
+                                    successful_count += 1
+                                except Exception as batch_e:
+                                    logger.error(f"Error indexing chunk in batch: {batch_e}")
+                        else:
+                            logger.error(f"Error processing batch in {relative_path}: {e}")
+                            # Try individual processing as fallback
+                            for j in range(len(batch_ids)):
+                                try:
+                                    collection.upsert(
+                                        ids=[batch_ids[j]],
+                                        metadatas=[batch_metadatas[j]],
+                                        documents=[batch_documents[j]]
+                                    )
+                                    successful_count += 1
+                                except Exception as batch_e:
+                                    logger.error(f"Error indexing chunk in batch: {batch_e}")
+            
+            log_msg = f"Indexed {successful_count}/{chunk_count} chunks for: {relative_path} at commit {commit_sha[:7]}"
+            if truncated_count > 0:
+                log_msg += f" ({truncated_count} chunks truncated due to token limit)"
+            logger.info(log_msg)
+            return successful_count > 0
+        else:
+            # For non-OpenAI embeddings, process all chunks at once (more efficient)
+            collection.upsert(ids=ids_list, metadatas=metadatas_list, documents=documents_list)
+            log_msg = f"Indexed {chunk_count} chunks for: {relative_path} at commit {commit_sha[:7]}"
+            if truncated_count > 0:
+                log_msg += f" ({truncated_count} chunks truncated due to token limit)"
+            logger.info(log_msg)
+            return True
 
     except Exception as e:
         logger.error(f"Error indexing {file_path}: {e}", exc_info=True)

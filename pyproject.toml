@@ -36,6 +36,7 @@ dependencies = [
     "onnxruntime>=1.21.0", # For default cpu-based embeddings generation
     "sentence-transformers>=4.1.0", # Only needed with accurate cpu-based embeddings
     "transformers~=4.41.0", # Pinning transformers version more specifically
+    "tiktoken>=0.8.0", # For accurate token counting with OpenAI embeddings (prevents token limit errors)
 ]
 
 [project.optional-dependencies]
