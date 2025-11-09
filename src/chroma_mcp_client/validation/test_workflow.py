@@ -76,13 +76,48 @@ class TestWorkflowManager:
 
     def _ensure_collections(self):
         """Ensure required ChromaDB collections exist."""
+        # Get the configured embedding function to ensure correct dimensions
+        try:
+            from chroma_mcp.utils.chroma_client import get_embedding_function
+            from chroma_mcp.utils import get_server_config
+            server_ef_name = get_server_config().embedding_function_name
+            embedding_function = get_embedding_function(server_ef_name)
+        except Exception:
+            embedding_function = None
+
         for collection_name in [self.test_results_collection, self.chat_history_collection, self.evidence_collection]:
             try:
-                self.client.get_collection(name=collection_name)
-                logger.info(f"Collection {collection_name} exists")
+                if embedding_function is not None:
+                    try:
+                        self.client.get_collection(name=collection_name, embedding_function=embedding_function)
+                        logger.info(f"Collection {collection_name} exists")
+                    except (ValueError, Exception) as e:
+                        error_str = str(e).lower()
+                        if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                            logger.warning(
+                                f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                                f"Deleting and recreating with correct embedding function."
+                            )
+                            try:
+                                self.client.delete_collection(name=collection_name)
+                                logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                            except Exception:
+                                pass
+                            self.client.create_collection(name=collection_name, embedding_function=embedding_function)
+                            logger.info(f"Created collection {collection_name} with correct embedding function")
+                        else:
+                            self.client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+                            logger.info(f"Created collection {collection_name}")
+                else:
+                    self.client.get_collection(name=collection_name)
+                    logger.info(f"Collection {collection_name} exists")
             except Exception:
-                self.client.create_collection(name=collection_name)
-                logger.info(f"Created collection {collection_name}")
+                if embedding_function is not None:
+                    self.client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+                    logger.info(f"Created collection {collection_name}")
+                else:
+                    self.client.create_collection(name=collection_name)
+                    logger.info(f"Created collection {collection_name}")
 
     def setup_git_hooks(self):
         """

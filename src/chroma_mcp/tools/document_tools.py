@@ -55,18 +55,51 @@ def _get_server_embedding_function():
     Note: For operations like getting documents by ID or metadata filters,
     the embedding function is not strictly required, but we use it for consistency.
     
+    This function reads the embedding function name from the server config,
+    but ensures that environment variables (like OPENAI_API_KEY, CHROMA_OPENAI_EMBEDDING_MODEL, etc.)
+    are read directly from os.getenv() to ensure the latest configuration is used.
+    
     Raises:
         McpError: If the embedding function cannot be loaded (e.g., missing API key).
     """
     logger = get_logger("tools.document")
     server_ef_name = get_server_config().embedding_function_name
     logger.debug(f"Using server embedding function: '{server_ef_name}'")
+    
+    # For OpenAI, verify configuration from environment variables
     if server_ef_name.lower() == "openai":
         openai_model = os.getenv("CHROMA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
         openai_dimensions = os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536")
-        logger.debug(f"OpenAI configuration - Model: {openai_model}, Dimensions: {openai_dimensions}")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        logger.info(f"OpenAI embedding configuration - Model: {openai_model}, Dimensions: {openai_dimensions}, API Key: {'SET' if openai_api_key else 'NOT SET'}")
+        
+        # Verify API key is available
+        if not openai_api_key:
+            error_msg = "OPENAI_API_KEY not found in environment variables. Please set it in your mcp.json or .env file."
+            logger.error(error_msg)
+            raise McpError(ErrorData(code=INTERNAL_ERROR, message=error_msg))
+    
     try:
-        return get_embedding_function(server_ef_name)
+        # get_embedding_function reads environment variables directly, so it should use the latest config
+        embedding_function = get_embedding_function(server_ef_name)
+        
+        # For OpenAI, verify the dimensions after instantiation
+        if server_ef_name.lower() == "openai":
+            try:
+                test_embedding = embedding_function.embed_documents(["test"])[0]
+                actual_dimensions = len(test_embedding)
+                expected_dimensions = int(os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536"))
+                if actual_dimensions != expected_dimensions:
+                    logger.warning(
+                        f"OpenAI embedding dimensions mismatch: expected {expected_dimensions}, "
+                        f"got {actual_dimensions}. This may cause issues when adding documents."
+                    )
+                else:
+                    logger.debug(f"OpenAI embedding dimensions verified: {actual_dimensions}")
+            except Exception as dim_check_error:
+                logger.warning(f"Could not verify embedding dimensions: {dim_check_error}")
+        
+        return embedding_function
     except Exception as e:
         # If embedding function is required but not available, raise error
         # This happens when trying to add/query documents that need embeddings

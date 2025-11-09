@@ -226,7 +226,15 @@ def get_client_and_ef(
     #    get_chroma_client handles the actual client creation logic
     print(f"Getting ChromaDB client (Type: {client_config.client_type})...", file=sys.stderr)
     # Pass the explicitly constructed config
-    client: chromadb.ClientAPI = get_chroma_client(config=client_config)
+    try:
+        client: chromadb.ClientAPI = get_chroma_client(config=client_config)
+    except Exception as client_error:
+        error_msg = f"Error al crear el cliente de ChromaDB: {client_error}"
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
+        # Re-raise with more context
+        raise RuntimeError(error_msg) from client_error
 
     # 5. Get the embedding function name from parameter or environment
     #    (EF name is often part of the general config, not client-specific connection)
@@ -236,6 +244,16 @@ def get_client_and_ef(
     # Debug: Check if API key is available for OpenAI
     if ef_name.lower() == "openai":
         openai_key = openai_api_key if openai_api_key is not None else os.getenv("OPENAI_API_KEY")
+        openai_model = os.getenv("CHROMA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        openai_dimensions = os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536")
+        
+        print(f"DEBUG: OpenAI configuration BEFORE instantiation:", file=sys.stderr)
+        print(f"  - Model: {openai_model}", file=sys.stderr)
+        print(f"  - Dimensions: {openai_dimensions}", file=sys.stderr)
+        print(f"  - API Key: {'SET' if openai_key else 'NOT SET'} (length: {len(openai_key) if openai_key else 0})", file=sys.stderr)
+        print(f"  - CHROMA_OPENAI_EMBEDDING_MODEL env: {os.getenv('CHROMA_OPENAI_EMBEDDING_MODEL', 'NOT SET')}", file=sys.stderr)
+        print(f"  - CHROMA_OPENAI_EMBEDDING_DIMENSIONS env: {os.getenv('CHROMA_OPENAI_EMBEDDING_DIMENSIONS', 'NOT SET')}", file=sys.stderr)
+        
         if not openai_key:
             error_msg = "OPENAI_API_KEY not found in parameters or environment variables. Please set it in your .env file or pass it as parameter."
             print(f"ERROR: {error_msg}", file=sys.stderr)
@@ -243,10 +261,44 @@ def get_client_and_ef(
         # Temporarily set OPENAI_API_KEY in environment for get_embedding_function
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
-        print(f"DEBUG: OPENAI_API_KEY is {'SET' if openai_key else 'NOT SET'} (length: {len(openai_key) if openai_key else 0})", file=sys.stderr)
     
     try:
         embedding_function: Optional[chromadb.EmbeddingFunction] = get_embedding_function(ef_name)
+        
+        # For OpenAI, verify dimensions after instantiation
+        if ef_name.lower() == "openai":
+            try:
+                # OpenAIEmbeddingFunction uses __call__ method, not embed_documents
+                # Try different methods to get embeddings
+                if hasattr(embedding_function, '__call__'):
+                    test_embedding = embedding_function(["test"])
+                    if isinstance(test_embedding, list) and len(test_embedding) > 0:
+                        actual_dimensions = len(test_embedding[0])
+                    else:
+                        actual_dimensions = len(test_embedding) if isinstance(test_embedding, (list, tuple)) else 0
+                elif hasattr(embedding_function, 'embed_documents'):
+                    test_embedding = embedding_function.embed_documents(["test"])[0]
+                    actual_dimensions = len(test_embedding)
+                else:
+                    # If we can't verify, just log the expected dimensions
+                    actual_dimensions = None
+                    print(f"DEBUG: OpenAI embedding dimensions AFTER instantiation:", file=sys.stderr)
+                    print(f"  - Expected: {int(os.getenv('CHROMA_OPENAI_EMBEDDING_DIMENSIONS', '1536'))}", file=sys.stderr)
+                    print(f"  - Actual: Could not verify (embedding function method not found)", file=sys.stderr)
+                    print(f"SUCCESS: OpenAI embedding function instantiated (dimensions verification skipped)", file=sys.stderr)
+                    return client, embedding_function
+                
+                expected_dimensions = int(os.getenv("CHROMA_OPENAI_EMBEDDING_DIMENSIONS", "1536"))
+                print(f"DEBUG: OpenAI embedding dimensions AFTER instantiation:", file=sys.stderr)
+                print(f"  - Expected: {expected_dimensions}", file=sys.stderr)
+                print(f"  - Actual: {actual_dimensions}", file=sys.stderr)
+                if actual_dimensions != expected_dimensions:
+                    print(f"WARNING: OpenAI embedding dimensions mismatch! Expected: {expected_dimensions}, Got: {actual_dimensions}", file=sys.stderr)
+                else:
+                    print(f"SUCCESS: OpenAI embedding dimensions match ({actual_dimensions})", file=sys.stderr)
+            except Exception as dim_check_error:
+                print(f"WARNING: Could not verify embedding dimensions: {dim_check_error}", file=sys.stderr)
+                print(f"INFO: OpenAI embedding function instantiated (dimension verification failed, but function is available)", file=sys.stderr)
     except Exception as e:
         error_msg = f"Error getting embedding function ('{ef_name}'): {e}"
         print(f"ERROR: {error_msg}", file=sys.stderr)

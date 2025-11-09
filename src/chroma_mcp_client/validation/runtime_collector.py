@@ -324,11 +324,47 @@ def store_runtime_error(
         if chroma_client is None:
             raise ValueError("ChromaDB client is required")
 
-    # Ensure collection exists
+    # Get the configured embedding function to ensure correct dimensions
     try:
-        collection = chroma_client.get_collection(name=collection_name)
+        from chroma_mcp.utils.chroma_client import get_embedding_function
+        from chroma_mcp.utils import get_server_config
+        server_ef_name = get_server_config().embedding_function_name
+        embedding_function = get_embedding_function(server_ef_name)
     except Exception:
-        collection = chroma_client.get_or_create_collection(name=collection_name)
+        # If we can't get the embedding function, use None (will use default)
+        embedding_function = None
+
+    # Ensure collection exists with correct embedding function
+    try:
+        # Try to get collection with correct embedding function
+        if embedding_function is not None:
+            try:
+                collection = chroma_client.get_collection(name=collection_name, embedding_function=embedding_function)
+            except (ValueError, Exception) as e:
+                # Check if it's a dimension mismatch error
+                error_str = str(e).lower()
+                if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                    # Collection exists but with wrong embedding function/dimensions
+                    logger.warning(
+                        f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                        f"Deleting and recreating with correct embedding function."
+                    )
+                    try:
+                        chroma_client.delete_collection(name=collection_name)
+                        logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                    except Exception:
+                        pass
+                    collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+                else:
+                    # Collection doesn't exist, create it
+                    collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+        else:
+            collection = chroma_client.get_collection(name=collection_name)
+    except Exception:
+        if embedding_function is not None:
+            collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+        else:
+            collection = chroma_client.get_or_create_collection(name=collection_name)
 
     # Generate the error ID if not present
     error_id = getattr(error, "error_id", None) or str(uuid.uuid4())
@@ -367,16 +403,51 @@ def store_runtime_errors(
         ID of the stored batch
     """
     # Import here to avoid circular imports
-    from chroma_mcp.utils.chroma_client import get_chroma_client
+    from chroma_mcp.utils.chroma_client import get_chroma_client, get_embedding_function
+    from chroma_mcp.utils import get_server_config
 
     if chroma_client is None:
         chroma_client = get_chroma_client()
 
-    # Ensure collection exists
+    # Get the configured embedding function to ensure correct dimensions
     try:
-        collection = chroma_client.get_collection(name=collection_name)
+        server_ef_name = get_server_config().embedding_function_name
+        embedding_function = get_embedding_function(server_ef_name)
     except Exception:
-        collection = chroma_client.create_collection(name=collection_name)
+        # If we can't get the embedding function, use None (will use default)
+        embedding_function = None
+
+    # Ensure collection exists with correct embedding function
+    try:
+        # Try to get collection with correct embedding function
+        if embedding_function is not None:
+            try:
+                collection = chroma_client.get_collection(name=collection_name, embedding_function=embedding_function)
+            except (ValueError, Exception) as e:
+                # Check if it's a dimension mismatch error
+                error_str = str(e).lower()
+                if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                    # Collection exists but with wrong embedding function/dimensions
+                    logger.warning(
+                        f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                        f"Deleting and recreating with correct embedding function."
+                    )
+                    try:
+                        chroma_client.delete_collection(name=collection_name)
+                        logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                    except Exception:
+                        pass
+                    collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+                else:
+                    # Collection doesn't exist, create it
+                    collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+        else:
+            collection = chroma_client.get_collection(name=collection_name)
+    except Exception:
+        if embedding_function is not None:
+            collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+        else:
+            collection = chroma_client.get_or_create_collection(name=collection_name)
 
     # Generate a batch ID
     batch_id = str(uuid.uuid4())

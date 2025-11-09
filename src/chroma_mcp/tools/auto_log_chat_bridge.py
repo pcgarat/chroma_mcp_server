@@ -97,7 +97,7 @@ def _do_log_chat(input_model: LogChatInput) -> str:
         logger.debug(f"OpenAI model: {os.getenv('CHROMA_OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')}")
         logger.debug(f"OpenAI dimensions: {os.getenv('CHROMA_OPENAI_EMBEDDING_DIMENSIONS', '1536')}")
     
-    client, _ = get_client_and_ef(
+    client, ef = get_client_and_ef(
         tenant=tenant,
         database=database,
         embedding_function=embedding_function,
@@ -127,9 +127,10 @@ def _do_log_chat(input_model: LogChatInput) -> str:
             elif hasattr(tool, "dict"):  # Pydantic v1
                 tool_usage[i] = tool.dict()
 
-    # Call the client implementation
+    # Call the client implementation, passing the embedding function
     chat_id = log_chat_to_chroma(
         chroma_client=client,
+        embedding_function=ef,  # Pass the embedding function to ensure correct dimensions
         prompt_summary=prompt_summary,
         response_summary=response_summary,
         raw_prompt=raw_prompt,

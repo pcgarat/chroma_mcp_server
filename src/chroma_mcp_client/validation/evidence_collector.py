@@ -232,11 +232,42 @@ class EvidenceCollector:
         if self.chroma_client is None:
             self.chroma_client = get_chroma_client()
 
-        # Ensure collection exists
+        # Get the configured embedding function to ensure correct dimensions
         try:
-            collection = self.chroma_client.get_collection(name=collection_name)
+            from chroma_mcp.utils.chroma_client import get_embedding_function
+            from chroma_mcp.utils import get_server_config
+            server_ef_name = get_server_config().embedding_function_name
+            embedding_function = get_embedding_function(server_ef_name)
         except Exception:
-            collection = self.chroma_client.create_collection(name=collection_name)
+            embedding_function = None
+
+        # Ensure collection exists with correct embedding function
+        try:
+            if embedding_function is not None:
+                try:
+                    collection = self.chroma_client.get_collection(name=collection_name, embedding_function=embedding_function)
+                except (ValueError, Exception) as e:
+                    error_str = str(e).lower()
+                    if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                        logger.warning(
+                            f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                            f"Deleting and recreating with correct embedding function."
+                        )
+                        try:
+                            self.chroma_client.delete_collection(name=collection_name)
+                            logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                        except Exception:
+                            pass
+                        collection = self.chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+                    else:
+                        collection = self.chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+            else:
+                collection = self.chroma_client.get_collection(name=collection_name)
+        except Exception:
+            if embedding_function is not None:
+                collection = self.chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+            else:
+                collection = self.chroma_client.create_collection(name=collection_name)
 
         # Build evidence and get score
         evidence = self.build_evidence()
@@ -351,17 +382,47 @@ def store_validation_evidence(
         The ID of the stored evidence document.
     """
     # Import here to avoid circular imports at the module level if issues arise
-    from chroma_mcp.utils.chroma_client import get_chroma_client
+    from chroma_mcp.utils.chroma_client import get_chroma_client, get_embedding_function
+    from chroma_mcp.utils import get_server_config
 
     if chroma_client is None:
         chroma_client = get_chroma_client()
 
-    # Ensure collection exists
+    # Get the configured embedding function to ensure correct dimensions
+    server_ef_name = get_server_config().embedding_function_name
+    embedding_function = get_embedding_function(server_ef_name)
+
+    # Ensure collection exists with correct embedding function
     try:
-        collection = chroma_client.get_collection(name=collection_name)
+        # Try to get collection with correct embedding function
+        try:
+            collection = chroma_client.get_collection(name=collection_name, embedding_function=embedding_function)
+        except (ValueError, Exception) as e:
+            # Check if it's a dimension mismatch error
+            error_str = str(e).lower()
+            if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                # Collection exists but with wrong embedding function/dimensions
+                logger.warning(
+                    f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                    f"Deleting and recreating with correct embedding function."
+                )
+                try:
+                    # Try to delete the collection (may fail if it doesn't exist)
+                    chroma_client.delete_collection(name=collection_name)
+                    logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                except Exception as delete_error:
+                    # Collection might not exist or deletion failed, log and continue
+                    logger.debug(f"Could not delete collection (may not exist): {delete_error}")
+                
+                # Create collection with correct embedding function
+                collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+                logger.info(f"Created collection {collection_name} with correct embedding function.")
+            else:
+                # Collection doesn't exist, create it
+                collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
     except Exception:  # Be more specific if ChromaDB raises a specific "not found" error
         # If EF needs to be specified, it should be handled here or by get_chroma_client
-        collection = chroma_client.create_collection(name=collection_name)
+        collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
 
     evidence_id = evidence.id  # Use the ID from the evidence object
     timestamp = datetime.datetime.now().isoformat()

@@ -122,6 +122,8 @@ from . import get_logger, get_server_config
 
 # Module-level cache for the client ONLY
 _chroma_client: Optional[Union[chromadb.PersistentClient, chromadb.HttpClient, chromadb.EphemeralClient]] = None
+# Cache the config used to create the client to detect configuration changes
+_chroma_client_config: Optional[ChromaClientConfig] = None
 
 
 # --- Embedding Function Registry & Helpers ---
@@ -355,12 +357,42 @@ def get_embedding_function(name: str) -> EmbeddingFunction:
             get_ollama_base_url()
         # Bedrock relies on implicit AWS credential chain (no specific check here)
 
-        instance = instantiator()
-        # Log configuration details for OpenAI
+        # For OpenAI, log configuration BEFORE instantiation
         if normalized_name == "openai":
             model_name = get_openai_embedding_model()
             dimensions = get_openai_embedding_dimensions()
-            logger.info(f"Successfully instantiated OpenAI embedding function - Model: {model_name}, Dimensions: {dimensions}")
+            api_key = get_api_key("openai")
+            logger.info(
+                f"OpenAI embedding configuration BEFORE instantiation - "
+                f"Model: {model_name}, Dimensions: {dimensions}, "
+                f"API Key: {'SET' if api_key else 'NOT SET'}, "
+                f"CHROMA_OPENAI_EMBEDDING_MODEL env: {os.getenv('CHROMA_OPENAI_EMBEDDING_MODEL', 'NOT SET')}, "
+                f"CHROMA_OPENAI_EMBEDDING_DIMENSIONS env: {os.getenv('CHROMA_OPENAI_EMBEDDING_DIMENSIONS', 'NOT SET')}"
+            )
+
+        instance = instantiator()
+        # Log configuration details for OpenAI AFTER instantiation
+        if normalized_name == "openai":
+            # Verify dimensions by creating a test embedding
+            try:
+                test_embedding = instance.embed_documents(["test"])[0]
+                actual_dimensions = len(test_embedding)
+                expected_dimensions = get_openai_embedding_dimensions()
+                logger.info(
+                    f"Successfully instantiated OpenAI embedding function - "
+                    f"Model: {model_name}, Expected Dimensions: {expected_dimensions}, "
+                    f"Actual Dimensions: {actual_dimensions}"
+                )
+                if expected_dimensions and actual_dimensions != expected_dimensions:
+                    logger.warning(
+                        f"⚠️  OpenAI embedding dimensions mismatch! "
+                        f"Expected: {expected_dimensions}, Got: {actual_dimensions}. "
+                        f"This may cause issues when adding documents. "
+                        f"Check CHROMA_OPENAI_EMBEDDING_DIMENSIONS environment variable."
+                    )
+            except Exception as dim_check_error:
+                logger.warning(f"Could not verify embedding dimensions: {dim_check_error}")
+                logger.info(f"Successfully instantiated OpenAI embedding function - Model: {model_name}")
         else:
             logger.info(f"Successfully instantiated embedding function: '{normalized_name}'")
         return instance
@@ -390,13 +422,39 @@ def get_chroma_client(
     config: Optional[ChromaClientConfig] = None,
 ) -> Union[chromadb.PersistentClient, chromadb.HttpClient, chromadb.EphemeralClient]:
     """Get or initialize the ChromaDB client based on configuration."""
-    global _chroma_client
+    global _chroma_client, _chroma_client_config
 
     # ADD logger assignment inside the function
     logger = get_logger("utils.chroma_client")
 
-    # If client already exists, return it
-    if _chroma_client is not None:
+    # If client already exists, check if config has changed
+    if _chroma_client is not None and config is not None:
+        # Check if the configuration has changed
+        if _chroma_client_config is not None:
+            # Compare critical config fields that affect client creation
+            config_changed = (
+                _chroma_client_config.client_type != config.client_type
+                or _chroma_client_config.host != config.host
+                or _chroma_client_config.port != config.port
+                or _chroma_client_config.tenant != config.tenant
+                or _chroma_client_config.database != config.database
+                or _chroma_client_config.ssl != config.ssl
+                or _chroma_client_config.api_key != config.api_key
+                or _chroma_client_config.data_dir != config.data_dir
+            )
+            if config_changed:
+                logger.info("Configuration changed, resetting client cache")
+                _chroma_client = None
+                _chroma_client_config = None
+            else:
+                # Config matches, return cached client
+                return _chroma_client
+        else:
+            # No cached config, but client exists - this shouldn't happen, but reset to be safe
+            logger.warning("Client exists but no cached config, resetting client cache")
+            _chroma_client = None
+    elif _chroma_client is not None:
+        # Client exists but no config provided - return cached client
         return _chroma_client
 
     # If client doesn't exist, initialize it (should only happen once)
@@ -466,6 +524,8 @@ def get_chroma_client(
             _chroma_client = chromadb.EphemeralClient(settings=chroma_settings)
             logger.info("Ephemeral client initialized")
 
+        # Cache the config used to create the client
+        _chroma_client_config = config
         return _chroma_client
 
     except Exception as e:
@@ -478,7 +538,7 @@ def reset_client() -> None:
     """Reset the global client instance."""
     logger = get_logger("utils.chroma_client")
     logger.info("Resetting Chroma client instance.")
-    global _chroma_client
+    global _chroma_client, _chroma_client_config
     if _chroma_client is not None:
         try:
             _chroma_client.reset()
@@ -488,6 +548,7 @@ def reset_client() -> None:
             else:
                 logger.error(f"Error resetting client: {e}")
         _chroma_client = None
+        _chroma_client_config = None
         logger.info("Chroma client instance reset.")
     else:
         logger.info("No active Chroma client instance to reset.")

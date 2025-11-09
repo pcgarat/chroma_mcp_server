@@ -183,12 +183,40 @@ class LearningPromoter:
         # Format learning
         learning = self.format_learning(evidence, chat_id, metadata)
 
+        # Get the configured embedding function to ensure correct dimensions
         try:
-            # Ensure collection exists
-            try:
-                collection = self.chroma_client.get_collection(name=collection_name)
-            except Exception:
-                collection = self.chroma_client.create_collection(name=collection_name)
+            from chroma_mcp.utils.chroma_client import get_embedding_function
+            from chroma_mcp.utils import get_server_config
+            server_ef_name = get_server_config().embedding_function_name
+            embedding_function = get_embedding_function(server_ef_name)
+        except Exception:
+            embedding_function = None
+
+        try:
+            # Ensure collection exists with correct embedding function
+            if embedding_function is not None:
+                try:
+                    collection = self.chroma_client.get_collection(name=collection_name, embedding_function=embedding_function)
+                except (ValueError, Exception) as e:
+                    error_str = str(e).lower()
+                    if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                        logger.warning(
+                            f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                            f"Deleting and recreating with correct embedding function."
+                        )
+                        try:
+                            self.chroma_client.delete_collection(name=collection_name)
+                            logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                        except Exception:
+                            pass
+                        collection = self.chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+                    else:
+                        collection = self.chroma_client.get_or_create_collection(name=collection_name, embedding_function=embedding_function)
+            else:
+                try:
+                    collection = self.chroma_client.get_collection(name=collection_name)
+                except Exception:
+                    collection = self.chroma_client.create_collection(name=collection_name)
 
             # Generate learning ID
             learning_id = str(uuid.uuid4())

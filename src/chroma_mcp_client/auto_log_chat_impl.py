@@ -139,13 +139,14 @@ def process_chat_for_logging(
 
 def log_chat_to_chroma(
     chroma_client,
-    prompt_summary: str,
-    response_summary: str,
-    raw_prompt: str,
-    raw_response: str,
-    tool_usage: List[Dict[str, Any]],
-    file_changes: List[Dict[str, Any]],
-    involved_entities: str,
+    embedding_function=None,
+    prompt_summary: str="",
+    response_summary: str="",
+    raw_prompt: str="",
+    raw_response: str="",
+    tool_usage: List[Dict[str, Any]]=None,
+    file_changes: List[Dict[str, Any]]=None,
+    involved_entities: str="",
     session_id: str = None,
 ) -> str:
     """
@@ -153,6 +154,7 @@ def log_chat_to_chroma(
 
     Args:
         chroma_client: ChromaDB client instance
+        embedding_function: Optional embedding function to use (required for correct dimensions)
         prompt_summary: Summary of the user's prompt
         response_summary: Summary of the AI's response
         raw_prompt: The raw user prompt text
@@ -165,6 +167,10 @@ def log_chat_to_chroma(
     Returns:
         ID of the added document
     """
+    if tool_usage is None:
+        tool_usage = []
+    if file_changes is None:
+        file_changes = []
     try:
         # Process the chat for logging
         log_data = process_chat_for_logging(
@@ -181,11 +187,42 @@ def log_chat_to_chroma(
         # Get or create the chat_history_v1 collection
         collection_name = "chat_history_v1"
         try:
-            collection = chroma_client.get_collection(name=collection_name)
+            # Always pass embedding_function when getting collection to ensure correct dimensions
+            if embedding_function is not None:
+                try:
+                    collection = chroma_client.get_collection(name=collection_name, embedding_function=embedding_function)
+                except (ValueError, Exception) as e:
+                    # Check if it's a dimension mismatch error
+                    error_str = str(e).lower()
+                    if "dimension" in error_str or "embedding function" in error_str or "mismatch" in error_str:
+                        # Collection exists but with wrong embedding function/dimensions
+                        logger.warning(
+                            f"Collection {collection_name} exists but with incompatible embedding function/dimensions. "
+                            f"Deleting and recreating with correct embedding function."
+                        )
+                        try:
+                            # Try to delete the collection (may fail if it doesn't exist)
+                            chroma_client.delete_collection(name=collection_name)
+                            logger.info(f"Deleted collection {collection_name} with incorrect dimensions.")
+                        except Exception as delete_error:
+                            # Collection might not exist or deletion failed, log and continue
+                            logger.debug(f"Could not delete collection (may not exist): {delete_error}")
+                        
+                        # Create collection with correct embedding function
+                        collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+                        logger.info(f"Created collection {collection_name} with correct embedding function.")
+                    else:
+                        # Re-raise if it's a different error
+                        raise
+            else:
+                collection = chroma_client.get_collection(name=collection_name)
         except ValueError:
-            # Collection doesn't exist, create it
+            # Collection doesn't exist, create it with the correct embedding function
             logger.info(f"Collection {collection_name} not found. Creating it.")
-            collection = chroma_client.create_collection(name=collection_name)
+            if embedding_function is not None:
+                collection = chroma_client.create_collection(name=collection_name, embedding_function=embedding_function)
+            else:
+                collection = chroma_client.create_collection(name=collection_name)
 
         # Generate a unique ID for the document
         chat_id = str(uuid.uuid4())
